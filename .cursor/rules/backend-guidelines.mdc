@@ -1,0 +1,24 @@
+---
+description: Backend coding standards — Go preferred; format and test before confirming
+globs: **/*.go
+alwaysApply: false
+---
+
+# Backend Guidelines
+
+## Project setup
+- **Always use Go (Golang)** for new backend projects; do not start new backend services in other languages unless explicitly required.
+
+## Format
+- **Always format** Go code before considering changes done: run `go fmt ./...` (or use `gofmt -s -w .`). Prefer `goimports` if the project uses it for import grouping.
+- Apply formatting after edits so the codebase stays consistent.
+
+## Testing
+- **Always run tests** to confirm changes: run `go test ./...` (or the project’s test command) before marking work complete.
+- Fix or update tests when behavior changes; do not commit with failing tests.
+- Prefer table-driven tests for multiple cases; keep tests close to the code they cover (`_test.go` next to the source file).
+
+## Minimum workflow
+Before confirming any backend/Go change:
+1. Format: `go fmt ./...`
+2. Test: `go test ./...`
