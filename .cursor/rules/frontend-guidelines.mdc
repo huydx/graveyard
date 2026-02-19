@@ -1,0 +1,45 @@
+---
+description: Frontend coding standards and patterns (React, Vue, CSS, a11y)
+globs: **/*.tsx,**/*.jsx,**/*.vue,**/*.css,**/*.scss,**/*.html
+alwaysApply: false
+---
+
+# Frontend Guidelines
+
+## Project setup
+- **Always use TypeScript** for new frontend projects (`.ts`/`.tsx`); avoid starting new projects in plain JavaScript.
+
+## Components & structure
+- Prefer functional components and hooks (React) or Composition API (Vue).
+- Keep components small and single-purpose; split when > ~150 lines or multiple responsibilities.
+- Colocate component-specific styles, types, and tests next to the component.
+
+```tsx
+// ✅ GOOD
+<button type="button" onClick={onClose} aria-label="Close dialog">
+  <CloseIcon />
+</button>
+
+// ❌ BAD
+<div onClick={onClose}><CloseIcon /></div>
+```
+
+## State & data
+- Prefer local state first; lift only when multiple components need it.
+- Use loading and error states for async UI; avoid silent failures.
+- Keep form state in one place (controlled inputs or a form library).
+
+## Styling
+- Prefer design tokens (colors, spacing, typography) from a shared theme or CSS variables.
+- Avoid inline styles for layout; use CSS/Sass or a utility system.
+- Use relative units (rem, em) and avoid fixed px for typography when possible.
+
+## Performance
+- Lazy-load routes and heavy components with `React.lazy` / `defineAsyncComponent` (Vue).
+- Memoize expensive computations and list children when needed (`useMemo`, `useCallback`, `key`).
+- Optimize images (sizes, format, lazy loading) and avoid layout thrash (batch DOM reads/writes).
+
+## Naming
+- Components: PascalCase. Files: match component name (e.g. `UserProfile.tsx`).
+- Handlers: `on*` or `handle*` (e.g. `onSubmit`, `handleClick`).
+- Booleans: `is*`, `has*`, `should*` (e.g. `isLoading`, `hasError`).
