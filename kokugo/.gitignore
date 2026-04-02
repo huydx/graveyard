@@ -1,0 +1,29 @@
+# Environment
+.env
+
+# Data / uploads
+data/
+
+# Go binary
+kokugo
+cmd/server/server
+
+# Node
+web/ui/node_modules/
+
+# Vite caches
+web/ui/.vite/
+web/ui/node_modules/.vite/
+
+# Build output (embedded static assets are committed; ignore local dev artifacts)
+web/ui/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
