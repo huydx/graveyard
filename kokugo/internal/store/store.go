@@ -159,6 +159,98 @@ func (s *Store) CreateExerciseDraft(ctx context.Context, imagePath string) (*Exe
 	}, nil
 }
 
+var (
+	ErrNotDraft    = errors.New("下書きのときだけページを削除できます")
+	ErrInvalidPage = errors.New("ページ番号が不正です")
+)
+
+// RemovePageResult is returned after removing a draft exercise page or deleting the whole draft.
+type RemovePageResult struct {
+	ExerciseDeleted bool
+	ImagePaths      []string
+	FilesToRemove   []string
+}
+
+func (s *Store) RemoveExercisePageAt(ctx context.Context, exerciseID string, pageIndex int) (RemovePageResult, error) {
+	var zero RemovePageResult
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return zero, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var status string
+	err = tx.QueryRowContext(ctx, `SELECT status FROM exercises WHERE id = ?`, exerciseID).Scan(&status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return zero, sql.ErrNoRows
+	}
+	if err != nil {
+		return zero, err
+	}
+	if status != "draft" {
+		return zero, ErrNotDraft
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT image_path FROM exercise_pages WHERE exercise_id = ? ORDER BY sort_order`, exerciseID)
+	if err != nil {
+		return zero, err
+	}
+	defer rows.Close()
+	var paths []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return zero, err
+		}
+		paths = append(paths, p)
+	}
+	if err := rows.Err(); err != nil {
+		return zero, err
+	}
+	if len(paths) == 0 {
+		var legacy string
+		_ = tx.QueryRowContext(ctx, `SELECT image_path FROM exercises WHERE id = ?`, exerciseID).Scan(&legacy)
+		if legacy != "" {
+			paths = []string{legacy}
+		}
+	}
+	if pageIndex < 0 || pageIndex >= len(paths) {
+		return zero, ErrInvalidPage
+	}
+
+	if len(paths) == 1 {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM exercises WHERE id = ?`, exerciseID); err != nil {
+			return zero, err
+		}
+		if err := tx.Commit(); err != nil {
+			return zero, err
+		}
+		return RemovePageResult{ExerciseDeleted: true, FilesToRemove: paths}, nil
+	}
+
+	removed := paths[pageIndex]
+	newPaths := append(paths[:pageIndex], paths[pageIndex+1:]...)
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM exercise_pages WHERE exercise_id = ?`, exerciseID); err != nil {
+		return zero, err
+	}
+	for i := range newPaths {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO exercise_pages (exercise_id, sort_order, image_path) VALUES (?, ?, ?)`,
+			exerciseID, i, newPaths[i]); err != nil {
+			return zero, err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE exercises SET image_path = ? WHERE id = ?`, newPaths[0], exerciseID); err != nil {
+		return zero, err
+	}
+	if err := tx.Commit(); err != nil {
+		return zero, err
+	}
+	return RemovePageResult{ImagePaths: newPaths, FilesToRemove: []string{removed}}, nil
+}
+
 func (s *Store) AddExercisePage(ctx context.Context, exerciseID, imagePath string) error {
 	var max sql.NullInt64
 	err := s.db.QueryRowContext(ctx, `

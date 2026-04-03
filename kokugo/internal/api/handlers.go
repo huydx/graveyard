@@ -1,7 +1,9 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -334,6 +336,49 @@ func (s *Server) AddExercisePage(w http.ResponseWriter, r *http.Request) {
 	s.json(w, http.StatusOK, map[string]any{"ok": true, "imagePaths": ex2.ImagePaths})
 }
 
+func (s *Server) DeleteExercisePage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		s.err(w, http.StatusMethodNotAllowed, "DELETE のみ")
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		s.err(w, http.StatusBadRequest, "演習IDが不正です")
+		return
+	}
+	pageStr := r.PathValue("pageIndex")
+	idx, err := strconv.Atoi(pageStr)
+	if err != nil || idx < 0 {
+		s.err(w, http.StatusBadRequest, "ページ番号が不正です")
+		return
+	}
+	res, err := s.Store.RemoveExercisePageAt(r.Context(), id, idx)
+	if errors.Is(err, sql.ErrNoRows) {
+		s.err(w, http.StatusNotFound, "見つかりません")
+		return
+	}
+	if errors.Is(err, store.ErrNotDraft) {
+		s.err(w, http.StatusConflict, err.Error())
+		return
+	}
+	if errors.Is(err, store.ErrInvalidPage) {
+		s.err(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err != nil {
+		s.err(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	for _, p := range res.FilesToRemove {
+		_ = os.Remove(p)
+	}
+	if res.ExerciseDeleted {
+		s.json(w, http.StatusOK, map[string]any{"exerciseDeleted": true})
+		return
+	}
+	s.json(w, http.StatusOK, map[string]any{"ok": true, "imagePaths": res.ImagePaths})
+}
+
 func (s *Server) GetExercise(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -522,6 +567,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/transcribe", s.TranscribeAudio)
 	mux.HandleFunc("POST /api/upload", s.UploadScan)
 	mux.HandleFunc("POST /api/exercises/{id}/pages", s.AddExercisePage)
+	mux.HandleFunc("DELETE /api/exercises/{id}/pages/{pageIndex}", s.DeleteExercisePage)
 	mux.HandleFunc("POST /api/exercises/{id}/parse", s.ParseExercise)
 	mux.HandleFunc("GET /api/exercises/{id}/image/{pageIndex}", s.ExerciseImagePage)
 	mux.HandleFunc("GET /api/exercises/{id}/image", s.ExerciseImage)

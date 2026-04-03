@@ -6,6 +6,7 @@ import {
   shouldUseBrowserSpeechRecognition,
 } from "../hooks/createJaSpeechRecognition";
 import { useMediaRecorderAnswer } from "../hooks/useMediaRecorderAnswer";
+import ScanImageModal from "../components/ScanImageModal";
 import RubyHtml, { PassageRuby } from "../components/RubyHtml";
 import { furiganaToSpeechText } from "../lib/ruby";
 import type { Question } from "../types";
@@ -26,6 +27,7 @@ export default function ExercisePage() {
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [loadErr, setLoadErr] = useState("");
   const [scanPageCount, setScanPageCount] = useState(0);
+  const [scanModalIndex, setScanModalIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -156,24 +158,26 @@ export default function ExercisePage() {
               よみあげ
             </button>
           </div>
-          {scanPageCount > 1 && (
+          {scanPageCount > 0 && (
             <div className="scan-page-strip exercise-scan-strip" aria-label="スキャンしたページ">
-              <p className="muted scan-page-count">{scanPageCount} まいのプリント</p>
+              <p className="muted scan-page-count">
+                {scanPageCount} まいのプリント（サムネをタップでおおきくみる）
+              </p>
               <div className="scan-thumbs">
                 {Array.from({ length: scanPageCount }, (_, i) => (
-                  <a
+                  <button
                     key={i}
-                    href={`/api/exercises/${encodeURIComponent(id)}/image/${i}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="scan-thumb-link"
+                    type="button"
+                    className="scan-thumb-btn"
+                    aria-label={`ページ ${i + 1} をおおきくひょうじ`}
+                    onClick={() => setScanModalIndex(i)}
                   >
                     <img
                       src={`/api/exercises/${encodeURIComponent(id)}/image/${i}`}
-                      alt={`ページ ${i + 1}`}
+                      alt=""
                       className="scan-thumb"
                     />
-                  </a>
+                  </button>
                 ))}
               </div>
             </div>
@@ -283,6 +287,16 @@ export default function ExercisePage() {
           )}
         </article>
       </div>
+
+      {scanModalIndex !== null && scanPageCount > 0 && (
+        <ScanImageModal
+          exerciseId={id}
+          pageIndex={scanModalIndex}
+          totalPages={scanPageCount}
+          onClose={() => setScanModalIndex(null)}
+          onChangePage={setScanModalIndex}
+        />
+      )}
     </section>
   );
 }

@@ -47,6 +47,13 @@ export function addExercisePage(exerciseId: string, file: File) {
   );
 }
 
+export function deleteExercisePage(exerciseId: string, pageIndex: number) {
+  return api<{ ok?: boolean; exerciseDeleted?: boolean; imagePaths?: string[] }>(
+    `/api/exercises/${encodeURIComponent(exerciseId)}/pages/${pageIndex}`,
+    { method: "DELETE" }
+  );
+}
+
 export function parseExercise(id: string) {
   return api(`/api/exercises/${encodeURIComponent(id)}/parse`, { method: "POST" });
 }
