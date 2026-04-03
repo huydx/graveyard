@@ -1,4 +1,12 @@
-import type { Exercise, HealthResponse, LearningSummary, Question, SubmitResult, VocabCard } from "../types";
+import type {
+  AppSettingsResponse,
+  Exercise,
+  HealthResponse,
+  LearningSummary,
+  Question,
+  SubmitResult,
+  VocabCard,
+} from "../types";
 
 async function parseJSON(text: string): Promise<Record<string, unknown>> {
   if (!text) return {};
@@ -27,6 +35,29 @@ export async function api<T = Record<string, unknown>>(path: string, opts: Reque
 
 export function getHealth() {
   return api<HealthResponse>("/api/health");
+}
+
+export function getAppSettings() {
+  return api<AppSettingsResponse>("/api/settings");
+}
+
+export type PutAppSettingsBody = {
+  ollamaBaseUrl?: string;
+  parseStrategy?: string;
+  summaryChatBackend?: string;
+  judgeChatBackend?: string;
+  rubyBackend?: string;
+  /** @deprecated まとめて3ロールに同じ値を書くときだけ */
+  chatBackend?: string;
+  googleApiKey?: string;
+  clearGoogleApiKey?: boolean;
+};
+
+export function putAppSettings(body: PutAppSettingsBody) {
+  return api<{ ok: boolean }>("/api/settings", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
 }
 
 export function uploadScan(file: File) {

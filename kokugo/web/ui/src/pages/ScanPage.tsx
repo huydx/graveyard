@@ -3,6 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { addExercisePage, deleteExercisePage, getExercise, parseExercise, uploadScan } from "../api/client";
 import CameraModal from "../components/CameraModal";
 import { useDraftExercise } from "../context/DraftExerciseContext";
+import {
+  readStoredMaxLongEdge,
+  resizeImageFile,
+  SCAN_CAPTURE_SIZE_OPTIONS,
+  writeStoredMaxLongEdge,
+} from "../lib/resizeScanImage";
 
 function imageFilesFromFileList(files: FileList | null): File[] {
   if (!files?.length) return [];
@@ -32,6 +38,7 @@ export default function ScanPage() {
   const [pageCount, setPageCount] = useState(0);
   const [thumbRev, setThumbRev] = useState(0);
   const [cameraModalOpen, setCameraModalOpen] = useState(false);
+  const [maxLongEdge, setMaxLongEdge] = useState(readStoredMaxLongEdge);
 
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
@@ -60,17 +67,23 @@ export default function ScanPage() {
   }, [draftExerciseId]);
 
   /** Upload images in order to one draft; server parse runs OCR per page then merges into one exercise. */
+  const setMaxLongEdgePersist = useCallback((n: number) => {
+    setMaxLongEdge(n);
+    writeStoredMaxLongEdge(n);
+  }, []);
+
   const uploadFiles = useCallback(
     async (files: File[]) => {
       const list = files.filter((f) => f.type.startsWith("image/"));
       if (list.length === 0) return;
       let exerciseId: string | null = draftExerciseIdRef.current;
       try {
-        for (let i = 0; i < list.length; i++) {
+        const resized = await Promise.all(list.map((f) => resizeImageFile(f, maxLongEdge)));
+        for (let i = 0; i < resized.length; i++) {
           setUploadStatus(
-            list.length > 1 ? `あっぷろーどちゅう… (${i + 1}/${list.length})` : "あっぷろーどちゅう…"
+            resized.length > 1 ? `あっぷろーどちゅう… (${i + 1}/${resized.length})` : "あっぷろーどちゅう…"
           );
-          const f = list[i];
+          const f = resized[i];
           if (exerciseId) {
             const data = await addExercisePage(exerciseId, f);
             const n = data.imagePaths?.length ?? 0;
@@ -90,7 +103,7 @@ export default function ScanPage() {
         setUploadStatus(err instanceof Error ? err.message : "エラー");
       }
     },
-    [setDraftExerciseId]
+    [maxLongEdge, setDraftExerciseId]
   );
 
   const uploadFile = async (f: File) => {
@@ -165,6 +178,22 @@ export default function ScanPage() {
             タブレットでは「カメラでとる」がおすすめ。PCでは「がめんうえでシャッター」かファイルをえらぶ。複数ページはアルバムでまとめてえらぶか、Ctrl+V / ⌘V
             でクリップボードの画像をいちどに追加（じゅんばんに同じれんしゅうのページになります）。Tailscale のアドレスだけ（https ではない）でつないでいるとき、ブラウザによってはシャッターがつかえません。そのときは「カメラでとる」をつかってください。
           </p>
+
+          <div className="scan-capture-size">
+            <label htmlFor="scan-capture-size-select">しゃしん・ファイルのおおきさ（アップロードまえにブラウザでちぢめる）</label>
+            <select
+              id="scan-capture-size-select"
+              className="input-select"
+              value={maxLongEdge}
+              onChange={(e) => setMaxLongEdgePersist(Number.parseInt(e.target.value, 10))}
+            >
+              {SCAN_CAPTURE_SIZE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <div className="scan-actions">
             <input
@@ -256,6 +285,8 @@ export default function ScanPage() {
       <CameraModal
         open={cameraModalOpen}
         onClose={() => setCameraModalOpen(false)}
+        maxLongEdge={maxLongEdge}
+        onMaxLongEdgeChange={setMaxLongEdgePersist}
         onCapture={(file) => {
           void uploadFile(file);
         }}

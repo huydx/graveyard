@@ -6,6 +6,7 @@ import ExercisePage from "./pages/ExercisePage";
 import ResultPage from "./pages/ResultPage";
 import HistoryPage from "./pages/HistoryPage";
 import RemindPage from "./pages/RemindPage";
+import SettingsPage from "./pages/SettingsPage";
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
         <Route path="/result/:id" element={<ResultPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/remind" element={<RemindPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Route>
     </Routes>
   );

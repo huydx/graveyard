@@ -24,6 +24,35 @@ export interface HealthResponse {
   geminiConnected: boolean;
   speechTranscribeOK?: boolean;
   childName: string;
+  llmProvider?: string;
+  parseStrategy?: string;
+  chatBackend?: string;
+  chatBackendSummary?: string;
+  chatBackendJudge?: string;
+  rubyBackend?: string;
+  ollamaBaseUrl?: string;
+}
+
+export interface AppSettingsResponse {
+  ollamaBaseUrl: string;
+  parseStrategy: string;
+  summaryChatBackend: string;
+  judgeChatBackend: string;
+  rubyBackend: string;
+  chatBackend?: string;
+  hasGeminiKey: boolean;
+  geminiKeyEffective: boolean;
+  parseStrategyEffective: string;
+  summaryChatBackendEffective: string;
+  judgeChatBackendEffective: string;
+  rubyBackendEffective: string;
+  chatBackendEffective: string;
+  envOllamaBaseUrl: string;
+  envParseStrategy: string;
+  envSummaryChatBackend: string;
+  envJudgeChatBackend: string;
+  envRubyBackend: string;
+  updatedAt?: string;
 }
 
 export interface VocabSummary {

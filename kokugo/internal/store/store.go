@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -90,6 +91,16 @@ func (s *Store) migrate() error {
 			PRIMARY KEY (exercise_id, sort_order)
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_exercise_pages_ex ON exercise_pages(exercise_id);`,
+		`CREATE TABLE IF NOT EXISTS app_settings (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			ollama_base_url TEXT NOT NULL DEFAULT '',
+			parse_strategy TEXT NOT NULL DEFAULT '',
+			google_api_key TEXT NOT NULL DEFAULT '',
+			chat_backend TEXT NOT NULL DEFAULT '',
+			updated_at TEXT NOT NULL DEFAULT ''
+		);`,
+		`INSERT OR IGNORE INTO app_settings (id, ollama_base_url, parse_strategy, google_api_key, updated_at)
+		 VALUES (1, '', '', '', strftime('%Y-%m-%dT%H:%M:%SZ','now'));`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
@@ -103,6 +114,31 @@ func (s *Store) migrate() error {
 			SELECT 1 FROM exercise_pages ep WHERE ep.exercise_id = exercises.id
 		)`); err != nil {
 		return fmt.Errorf("migrate backfill exercise_pages: %w", err)
+	}
+	if _, err := s.db.Exec(`ALTER TABLE app_settings ADD COLUMN chat_backend TEXT NOT NULL DEFAULT ''`); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+			return fmt.Errorf("migrate app_settings chat_backend: %w", err)
+		}
+	}
+	for _, col := range []string{
+		`summary_chat_backend`,
+		`judge_chat_backend`,
+		`ruby_backend`,
+	} {
+		q := `ALTER TABLE app_settings ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`
+		if _, err := s.db.Exec(q); err != nil {
+			if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+				return fmt.Errorf("migrate app_settings %s: %w", col, err)
+			}
+		}
+	}
+	if _, err := s.db.Exec(`
+		UPDATE app_settings SET
+			summary_chat_backend = CASE WHEN trim(summary_chat_backend) = '' AND trim(chat_backend) != '' THEN chat_backend ELSE summary_chat_backend END,
+			judge_chat_backend = CASE WHEN trim(judge_chat_backend) = '' AND trim(chat_backend) != '' THEN chat_backend ELSE judge_chat_backend END,
+			ruby_backend = CASE WHEN trim(ruby_backend) = '' AND trim(chat_backend) != '' THEN chat_backend ELSE ruby_backend END
+		WHERE id = 1`); err != nil {
+		return fmt.Errorf("migrate app_settings backfill role backends: %w", err)
 	}
 	return nil
 }

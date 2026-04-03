@@ -9,7 +9,6 @@ import (
 
 	"github.com/huydx/kokugo/internal/api"
 	"github.com/huydx/kokugo/internal/config"
-	"github.com/huydx/kokugo/internal/gemini"
 	"github.com/huydx/kokugo/internal/store"
 	"github.com/huydx/kokugo/web"
 )
@@ -22,19 +21,11 @@ func main() {
 	}
 	defer st.Close()
 
-	var g *gemini.Client
-	if cfg.GoogleKey != "" {
-		c, err := gemini.New(context.Background(), cfg.GoogleKey, cfg.GeminiModel, int32(cfg.ParseMaxOutputTokens))
-		if err != nil {
-			log.Printf("gemini: %v", err)
-		} else {
-			g = c
-		}
-	} else {
-		log.Printf("GOOGLE_API_KEY が未設定 — AI 機能は無効です")
+	srv := &api.Server{Cfg: cfg, Store: st}
+	if err := srv.ReloadLLM(context.Background()); err != nil {
+		log.Fatalf("ReloadLLM: %v", err)
 	}
 
-	srv := &api.Server{Cfg: cfg, Store: st, Gemini: g}
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
@@ -49,6 +40,7 @@ func main() {
 		"GET /scan",
 		"GET /history",
 		"GET /remind",
+		"GET /settings",
 		"GET /exercise/{id}",
 		"GET /result/{id}",
 	}

@@ -241,6 +241,39 @@ h3 {
   gap: 0.75rem;
   margin-top: 0.5rem;
 }
+.scan-capture-size,
+.camera-capture-size {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+.scan-capture-size label,
+.camera-capture-size label {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--blue-800);
+}
+.input-select {
+  width: 100%;
+  max-width: 100%;
+  min-height: 48px;
+  padding: 0.5rem 0.75rem;
+  font-size: 1rem;
+  font-family: inherit;
+  color: var(--blue-900);
+  background: #fff;
+  border: 3px solid var(--blue-200);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.input-select:focus-visible {
+  outline: 2px solid var(--blue-500);
+  outline-offset: 2px;
+}
+.camera-capture-size {
+  margin-top: 0.5rem;
+}
 .scan-page-strip {
   margin-top: 1rem;
 }
@@ -744,4 +777,49 @@ rt {
     width: 100%;
     margin-top: 0;
   }
+}
+
+/* Settings */
+.settings-card h2 {
+  margin-top: 0;
+}
+.settings-field {
+  margin-top: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.settings-field > label:first-of-type {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.small-gap {
+  margin-bottom: 0.5rem;
+}
+.tiny-hint {
+  font-size: 0.8rem;
+  margin: 0;
+}
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  margin-top: 0.5rem;
+  cursor: pointer;
+}
+.settings-actions {
+  margin-top: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.ok-text {
+  color: var(--green);
+  font-weight: 700;
+}
+.error-text {
+  color: #b91c1c;
+  margin-top: 0.75rem;
 }

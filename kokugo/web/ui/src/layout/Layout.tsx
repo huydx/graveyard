@@ -9,6 +9,7 @@ const routeTitles: { prefix: string; title: string }[] = [
   { prefix: "/scan", title: "スキャン" },
   { prefix: "/history", title: "きろく" },
   { prefix: "/remind", title: "まいつきおさらい" },
+  { prefix: "/settings", title: "せってい" },
   { prefix: "/", title: "ホーム" },
 ];
 
@@ -44,7 +45,7 @@ export default function Layout() {
         setBadge("API: つづかない");
         setGeminiOk(false);
       });
-  }, []);
+  }, [location.pathname]);
 
   const startLesson = () => {
     navigate(draftExerciseId ? `/exercise/${encodeURIComponent(draftExerciseId)}` : "/scan");
@@ -79,6 +80,9 @@ export default function Layout() {
           </NavLink>
           <NavLink to="/remind" className={({ isActive }) => "nav-btn" + (isActive ? " active" : "")}>
             まいつきおさらい
+          </NavLink>
+          <NavLink to="/settings" className={({ isActive }) => "nav-btn" + (isActive ? " active" : "")}>
+            せってい
           </NavLink>
         </nav>
         <button type="button" className="btn btn-primary btn-block sidebar-cta" onClick={startLesson}>

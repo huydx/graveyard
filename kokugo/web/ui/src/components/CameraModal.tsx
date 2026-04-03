@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SCAN_CAPTURE_SIZE_OPTIONS, scaleToMaxLongEdge } from "../lib/resizeScanImage";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   onCapture: (file: File) => void;
+  maxLongEdge: number;
+  onMaxLongEdgeChange: (n: number) => void;
 };
 
-export default function CameraModal({ open, onClose, onCapture }: Props) {
+export default function CameraModal({ open, onClose, onCapture, maxLongEdge, onMaxLongEdgeChange }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [ready, setReady] = useState(false);
@@ -53,12 +56,15 @@ export default function CameraModal({ open, onClose, onCapture }: Props) {
   const shutter = () => {
     const v = videoRef.current;
     if (!v || v.videoWidth === 0) return;
+    const vw = v.videoWidth;
+    const vh = v.videoHeight;
+    const { width: tw, height: th } = scaleToMaxLongEdge(vw, vh, maxLongEdge);
     const canvas = document.createElement("canvas");
-    canvas.width = v.videoWidth;
-    canvas.height = v.videoHeight;
+    canvas.width = tw;
+    canvas.height = th;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.drawImage(v, 0, 0);
+    ctx.drawImage(v, 0, 0, vw, vh, 0, 0, tw, th);
     canvas.toBlob(
       (blob) => {
         if (!blob) return;
@@ -94,6 +100,21 @@ export default function CameraModal({ open, onClose, onCapture }: Props) {
           <>
             <video ref={videoRef} className="camera-video" playsInline muted autoPlay />
             <p className="muted camera-hint">{ready ? "シャッターをおす" : "カメラをよみこみちゅう…"}</p>
+            <div className="camera-capture-size">
+              <label htmlFor="camera-capture-size-select">しゃしんのおおきさ（ブラウザでちぢめる）</label>
+              <select
+                id="camera-capture-size-select"
+                className="input-select"
+                value={maxLongEdge}
+                onChange={(e) => onMaxLongEdgeChange(Number.parseInt(e.target.value, 10))}
+              >
+                {SCAN_CAPTURE_SIZE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             <button
               type="button"
               className="btn btn-primary btn-xl btn-block camera-shutter"

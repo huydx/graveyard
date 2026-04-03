@@ -11,19 +11,20 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	"github.com/huydx/kokugo/internal/ai"
 	"github.com/huydx/kokugo/internal/config"
-	"github.com/huydx/kokugo/internal/gemini"
 	"github.com/huydx/kokugo/internal/store"
 )
 
 const maxExercisePages = 12
 
 type Server struct {
-	Cfg    config.Config
-	Store  *store.Store
-	Gemini *gemini.Client
+	Cfg   config.Config
+	Store *store.Store
+	llm   atomic.Pointer[llmRuntime]
 }
 
 func (s *Server) json(w http.ResponseWriter, status int, v any) {
@@ -37,10 +38,18 @@ func (s *Server) err(w http.ResponseWriter, status int, msg string) {
 }
 
 func (s *Server) Health(w http.ResponseWriter, r *http.Request) {
+	rt := s.lm()
 	s.json(w, http.StatusOK, map[string]any{
-		"geminiConnected":    s.Gemini != nil,
-		"speechTranscribeOK": s.Gemini != nil,
-		"childName":          s.Cfg.ChildName,
+		"geminiConnected":       rt.imageParser != nil,
+		"speechTranscribeOK":    rt.transcribeOK && rt.summaryChat != nil,
+		"childName":             s.Cfg.ChildName,
+		"llmProvider":           s.Cfg.LLMProvider,
+		"parseStrategy":         rt.effParseStrat,
+		"chatBackend":           rt.effSummaryBackend,
+		"chatBackendSummary":    rt.effSummaryBackend,
+		"chatBackendJudge":      rt.effJudgeBackend,
+		"rubyBackend":           rt.effRubyBackend,
+		"ollamaBaseUrl":         rt.effOllamaURL,
 	})
 }
 
@@ -49,8 +58,9 @@ func (s *Server) TranscribeAudio(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusMethodNotAllowed, "POST のみ")
 		return
 	}
-	if s.Gemini == nil {
-		s.err(w, http.StatusServiceUnavailable, "Gemini が未設定です")
+	rt := s.lm()
+	if rt.summaryChat == nil || !rt.transcribeOK {
+		s.err(w, http.StatusServiceUnavailable, "音声の文字おこしは要約まわりを Gemini にする必要があります（KOKUGO_CHAT_BACKEND_SUMMARY=gemini と GOOGLE_API_KEY）")
 		return
 	}
 	_ = r.ParseMultipartForm(16 << 20)
@@ -83,7 +93,7 @@ func (s *Server) TranscribeAudio(w http.ResponseWriter, r *http.Request) {
 	if mime == "" {
 		mime = "audio/mp4"
 	}
-	text, err := s.Gemini.TranscribeAnswerAudio(r.Context(), data, mime)
+	text, err := ai.TranscribeAnswerAudio(r.Context(), rt.summaryChat, rt.summaryModel, data, mime)
 	if err != nil {
 		log.Printf("transcribe: %v", err)
 		s.err(w, http.StatusBadGateway, "文字おこしに失敗しました")
@@ -142,8 +152,9 @@ func (s *Server) ParseExercise(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusMethodNotAllowed, "POST のみ")
 		return
 	}
-	if s.Gemini == nil {
-		s.err(w, http.StatusServiceUnavailable, "Gemini が未設定です（GOOGLE_API_KEY）")
+	rt := s.lm()
+	if rt.imageParser == nil {
+		s.err(w, http.StatusServiceUnavailable, "画像の解析ができません（KOKUGO_LLM_PROVIDER と API キー / Ollama を設定してください）")
 		return
 	}
 	id := r.PathValue("id")
@@ -168,21 +179,16 @@ func (s *Server) ParseExercise(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusBadRequest, "ページが多すぎます（最大12枚）")
 		return
 	}
-	var pages []gemini.ImagePart
+	var pages []ai.ImagePart
 	for _, p := range paths {
 		data, err := os.ReadFile(p)
 		if err != nil {
 			s.err(w, http.StatusInternalServerError, "画像ファイルを読めません")
 			return
 		}
-		pages = append(pages, gemini.ImagePart{Data: data, MIME: mimeForPath(p)})
+		pages = append(pages, ai.ImagePart{Data: data, MIME: mimeForPath(p)})
 	}
-	var parsed *gemini.ParsedExercise
-	if len(pages) == 1 {
-		parsed, err = s.Gemini.ParseExerciseImage(r.Context(), pages[0].Data, pages[0].MIME)
-	} else {
-		parsed, err = s.Gemini.ParseExercisePages(r.Context(), pages)
-	}
+	parsed, err := rt.imageParser.ParseExercisePages(r.Context(), pages)
 	if err != nil {
 		log.Printf("parse: %v", err)
 		s.err(w, http.StatusBadGateway, "AIの解析に失敗しました: "+err.Error())
@@ -419,27 +425,26 @@ func (s *Server) SubmitAnswers(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusBadRequest, "JSONが不正です")
 		return
 	}
-	_, qs, err := s.Store.GetExercise(r.Context(), id)
+	ex, qs, err := s.Store.GetExercise(r.Context(), id)
 	if err != nil {
 		s.err(w, http.StatusNotFound, "見つかりません")
 		return
 	}
 	correct := 0
-	for _, q := range qs {
-		ua := strings.TrimSpace(body.Answers[q.ID])
-		ca := strings.TrimSpace(q.CorrectAnswer)
-		if ca == "" {
-			continue
+	rt := s.lm()
+	if rt.judgeChat != nil {
+		items := buildAnswerJudgeItems(body.Answers, qs)
+		if len(items) > 0 {
+			judgments, err := ai.JudgeExerciseAnswers(r.Context(), rt.judgeChat, rt.judgeModel, ex.Title, ex.Passage, items)
+			if err != nil {
+				log.Printf("judge_answers: %v", err)
+				s.err(w, http.StatusBadGateway, "AIの採点に失敗しました: "+err.Error())
+				return
+			}
+			correct = countCorrectWithJudgments(qs, judgments)
 		}
-		match := false
-		if strings.EqualFold(q.Type, "voice") {
-			match = norm(ua) == norm(plainAnswerForCompare(ca))
-		} else {
-			match = norm(ua) == norm(ca)
-		}
-		if match {
-			correct++
-		}
+	} else {
+		correct = scoreAnswersLegacy(body.Answers, qs)
 	}
 	pct := 0
 	if len(qs) > 0 {
@@ -460,13 +465,67 @@ func norm(s string) string {
 	return strings.TrimSpace(strings.ToLower(s))
 }
 
+func buildAnswerJudgeItems(answers map[string]string, qs []store.Question) []ai.AnswerJudgeItem {
+	var items []ai.AnswerJudgeItem
+	for _, q := range qs {
+		ca := strings.TrimSpace(q.CorrectAnswer)
+		if ca == "" {
+			continue
+		}
+		ua := ""
+		if answers != nil {
+			ua = strings.TrimSpace(answers[q.ID])
+		}
+		items = append(items, ai.AnswerJudgeItem{
+			ID: q.ID, Type: q.Type, Prompt: q.Prompt, Options: q.Options,
+			Correct: ca, UserAnswer: ua,
+		})
+	}
+	return items
+}
+
+func countCorrectWithJudgments(qs []store.Question, judge map[string]bool) int {
+	n := 0
+	for _, q := range qs {
+		if strings.TrimSpace(q.CorrectAnswer) == "" {
+			continue
+		}
+		if judge[q.ID] {
+			n++
+		}
+	}
+	return n
+}
+
+func scoreAnswersLegacy(answers map[string]string, qs []store.Question) int {
+	n := 0
+	for _, q := range qs {
+		ua := strings.TrimSpace(answers[q.ID])
+		ca := strings.TrimSpace(q.CorrectAnswer)
+		if ca == "" {
+			continue
+		}
+		var match bool
+		if strings.EqualFold(q.Type, "voice") {
+			match = norm(ua) == norm(plainAnswerForCompare(ca))
+		} else {
+			match = norm(ua) == norm(ca)
+		}
+		if match {
+			n++
+		}
+	}
+	return n
+}
+
 func (s *Server) GenerateSummary(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		s.err(w, http.StatusMethodNotAllowed, "POST のみ")
 		return
 	}
-	if s.Gemini == nil {
-		s.err(w, http.StatusServiceUnavailable, "Gemini が未設定です")
+	rt := s.lm()
+	if rt.summaryChat == nil {
+		s.err(w, http.StatusServiceUnavailable, "まとめの生成には要約用チャット（Gemini または Ollama）が必要です")
 		return
 	}
 	eid := r.PathValue("id")
@@ -480,7 +539,7 @@ func (s *Server) GenerateSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	qj, _ := json.Marshal(qs)
-	sum, err := s.Gemini.SummarizeLearning(r.Context(), ex.Title, ex.Passage, string(qj), ex.ScorePercent)
+	sum, err := ai.SummarizeLearning(r.Context(), rt.summaryChat, rt.summaryModel, ex.Title, ex.Passage, string(qj), ex.ScorePercent)
 	if err != nil {
 		log.Printf("summary: %v", err)
 		s.err(w, http.StatusBadGateway, "まとめの生成に失敗: "+err.Error())
@@ -564,6 +623,9 @@ func (s *Server) ReviewCard(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/health", s.Health)
+	mux.HandleFunc("GET /api/settings", s.GetSettings)
+	mux.HandleFunc("PUT /api/settings", s.PutSettings)
+	mux.HandleFunc("POST /api/settings", s.PutSettings)
 	mux.HandleFunc("POST /api/transcribe", s.TranscribeAudio)
 	mux.HandleFunc("POST /api/upload", s.UploadScan)
 	mux.HandleFunc("POST /api/exercises/{id}/pages", s.AddExercisePage)
