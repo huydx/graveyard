@@ -4,6 +4,7 @@ import type {
   HealthResponse,
   LearningSummary,
   Question,
+  QuestionCheckResult,
   SubmitResult,
   VocabCard,
 } from "../types";
@@ -98,6 +99,13 @@ export function submitAnswers(id: string, answers: Record<string, string>) {
     method: "POST",
     body: JSON.stringify({ answers }),
   });
+}
+
+export function checkQuestionAnswer(exerciseId: string, questionId: string, answer: string) {
+  return api<QuestionCheckResult>(
+    `/api/exercises/${encodeURIComponent(exerciseId)}/questions/${encodeURIComponent(questionId)}/check`,
+    { method: "POST", body: JSON.stringify({ answer }) }
+  );
 }
 
 export function generateSummary(id: string) {

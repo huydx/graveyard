@@ -65,6 +65,7 @@ func schemaAnswerJudgment(maxResults *int64) *genai.Schema {
 		v := int64(16)
 		maxResults = &v
 	}
+	maxFeedback := int64(480)
 	return &genai.Schema{
 		Type: genai.TypeObject,
 		Properties: map[string]*genai.Schema{
@@ -75,8 +76,13 @@ func schemaAnswerJudgment(maxResults *int64) *genai.Schema {
 					Properties: map[string]*genai.Schema{
 						"question_id": {Type: genai.TypeString, Description: "設問の id（入力と同じ）"},
 						"is_correct":  {Type: genai.TypeBoolean, Description: "正解なら true"},
+						"feedback": {
+							Type:        genai.TypeString,
+							Description: "子ども向けの短いコメント（正解ならほめる、不正解なら何が違うかとヒント）。漢字はruby付き",
+							MaxLength:   &maxFeedback,
+						},
 					},
-					Required: []string{"question_id", "is_correct"},
+					Required: []string{"question_id", "is_correct", "feedback"},
 				},
 				MaxItems: maxResults,
 			},

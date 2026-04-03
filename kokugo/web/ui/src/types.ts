@@ -18,6 +18,8 @@ export interface Question {
   prompt: string;
   options: string[];
   focusWord: string;
+  /** サーバーが正解をもち、自動採点・かくにんできる */
+  scorable?: boolean;
 }
 
 export interface HealthResponse {
@@ -75,8 +77,24 @@ export interface VocabCard {
   examples: string[];
 }
 
+export interface QuestionCheckResult {
+  questionId: string;
+  prompt: string;
+  isCorrect: boolean;
+  feedback: string;
+}
+
+export interface QuestionResultRow {
+  questionId: string;
+  prompt: string;
+  userAnswer: string;
+  isCorrect: boolean;
+  feedback: string;
+}
+
 export interface SubmitResult {
   scorePercent: number;
   correct: number;
   total: number;
+  questionResults?: QuestionResultRow[];
 }

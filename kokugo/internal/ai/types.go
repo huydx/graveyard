@@ -51,3 +51,10 @@ type AnswerJudgeItem struct {
 	Correct    string   `json:"correct"`
 	UserAnswer string   `json:"user_answer"`
 }
+
+// AnswerJudgment is one scored answer from the judge model (or legacy compare).
+type AnswerJudgment struct {
+	QuestionID string `json:"questionId"`
+	IsCorrect  bool   `json:"isCorrect"`
+	Feedback   string `json:"feedback"`
+}

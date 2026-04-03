@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { getExercise, submitAnswers, transcribeAudio } from "../api/client";
+import { checkQuestionAnswer, getExercise, submitAnswers, transcribeAudio } from "../api/client";
 import {
   createJaSpeechRecognition,
   shouldUseBrowserSpeechRecognition,
@@ -9,7 +9,7 @@ import { useMediaRecorderAnswer } from "../hooks/useMediaRecorderAnswer";
 import ScanImageModal from "../components/ScanImageModal";
 import RubyHtml, { PassageRuby } from "../components/RubyHtml";
 import { furiganaToSpeechText } from "../lib/ruby";
-import type { Question } from "../types";
+import type { Question, QuestionCheckResult } from "../types";
 
 export default function ExercisePage() {
   const { id: rawId } = useParams<{ id: string }>();
@@ -25,6 +25,8 @@ export default function ExercisePage() {
   const [listening, setListening] = useState(false);
   const [deviceRecording, setDeviceRecording] = useState(false);
   const [voiceBusy, setVoiceBusy] = useState(false);
+  const [checkBusy, setCheckBusy] = useState(false);
+  const [checks, setChecks] = useState<Record<string, QuestionCheckResult>>({});
   const [loadErr, setLoadErr] = useState("");
   const [scanPageCount, setScanPageCount] = useState(0);
   const [scanModalIndex, setScanModalIndex] = useState<number | null>(null);
@@ -37,6 +39,7 @@ export default function ExercisePage() {
         setPassage(d.exercise.passage || "");
         setQuestions(d.questions || []);
         setAnswers({});
+        setChecks({});
         setQIdx(0);
         const n = d.exercise.imagePaths?.length ?? (d.exercise.imagePath ? 1 : 0);
         setScanPageCount(n);
@@ -54,6 +57,11 @@ export default function ExercisePage() {
 
   const setAnswer = useCallback((qid: string, val: string) => {
     setAnswers((a) => ({ ...a, [qid]: val }));
+    setChecks((c) => {
+      if (!c[qid]) return c;
+      const { [qid]: _, ...rest } = c;
+      return rest;
+    });
   }, []);
 
   const readPassage = () => {
@@ -126,8 +134,28 @@ export default function ExercisePage() {
     }
   };
 
+  const needsCheck = (qq: Question) => qq.scorable !== false;
+
+  const onCheckAnswer = async () => {
+    if (!id || !q || !needsCheck(q)) return;
+    setCheckBusy(true);
+    try {
+      const res = await checkQuestionAnswer(id, q.id, answers[q.id] ?? "");
+      setChecks((c) => ({ ...c, [q.id]: res }));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "エラー");
+    } finally {
+      setCheckBusy(false);
+    }
+  };
+
   const onSubmit = async () => {
     if (!id) return;
+    const pending = questions.filter((qq) => needsCheck(qq) && !checks[qq.id]);
+    if (pending.length > 0) {
+      alert("まだ「こたえをかくにん」していないもんだいがあります。1もんずつかくにんしてからおくってください。");
+      return;
+    }
     try {
       const res = await submitAnswers(id, answers);
       navigate(`/result/${encodeURIComponent(id)}`, { state: { result: res } });
@@ -137,6 +165,9 @@ export default function ExercisePage() {
   };
 
   const micActive = listening || deviceRecording || voiceBusy;
+  const check = q ? checks[q.id] : undefined;
+  const scorable = q && needsCheck(q);
+  const canGoNext = !q || !scorable || Boolean(check);
 
   if (loadErr) {
     return (
@@ -262,6 +293,34 @@ export default function ExercisePage() {
                 </div>
               )}
 
+              {scorable && (
+                <div className="q-check-row">
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-lg"
+                    disabled={checkBusy}
+                    onClick={() => void onCheckAnswer()}
+                  >
+                    {checkBusy ? "かくにんちゅう…" : "こたえをかくにん"}
+                  </button>
+                  {!check && <span className="muted">せいかいかどうと、コメントがでます</span>}
+                </div>
+              )}
+              {!scorable && <p className="muted q-scorable-skip">じどうさいてんのたいしょうがいです。つぎへすすんでOKです。</p>}
+              {check && (
+                <div
+                  className={
+                    "q-feedback" + (check.isCorrect ? " q-feedback-correct" : " q-feedback-wrong")
+                  }
+                  role="status"
+                >
+                  <strong>{check.isCorrect ? "せいかい" : "ざんねん"}</strong>
+                  <div>
+                    <RubyHtml html={check.feedback} />
+                  </div>
+                </div>
+              )}
+
               <div className="row-actions">
                 <button
                   type="button"
@@ -274,14 +333,14 @@ export default function ExercisePage() {
                 <button
                   type="button"
                   className="btn btn-primary btn-lg"
-                  disabled={qIdx >= questions.length - 1}
+                  disabled={qIdx >= questions.length - 1 || !canGoNext}
                   onClick={() => setQIdx((i) => i + 1)}
                 >
                   つぎ
                 </button>
               </div>
               <button type="button" className="btn btn-primary btn-xl btn-block" onClick={onSubmit}>
-                こたえをおくる
+                すべてのこたえをおくる
               </button>
             </>
           )}

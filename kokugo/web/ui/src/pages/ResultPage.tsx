@@ -45,9 +45,36 @@ export default function ResultPage() {
       <div className="card">
         <h2>けっか</h2>
         {r ? (
-          <p className="score-big">
-            {r.scorePercent}%（{r.correct}/{r.total} せいかい）
-          </p>
+          <>
+            <p className="score-big">
+              {r.scorePercent}%（{r.correct}/{r.total} せいかい）
+            </p>
+            {r.questionResults && r.questionResults.length > 0 && (
+              <div className="result-by-question">
+                <h3 className="result-by-q-head">もんばんごとのコメント</h3>
+                <ol className="result-q-list">
+                  {r.questionResults.map((row) => (
+                    <li key={row.questionId} className="result-q-item">
+                      <p className="result-q-prompt">
+                        <RubyHtml html={row.prompt} />
+                      </p>
+                      <p className={"result-q-badge" + (row.isCorrect ? " ok" : " ng")}>
+                        {row.isCorrect ? "せいかい" : "ざんねん"}
+                      </p>
+                      {row.userAnswer ? (
+                        <p className="muted result-q-ua">
+                          あなたのこたえ: <RubyHtml html={row.userAnswer} />
+                        </p>
+                      ) : null}
+                      <div className="result-q-fb">
+                        <RubyHtml html={row.feedback} />
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+          </>
         ) : (
           <p className="muted">けっかデータがありません（きろくからひらいたときなど）</p>
         )}

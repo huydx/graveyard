@@ -75,13 +75,13 @@ func SummarizeLearning(ctx context.Context, c ChatCompleter, model string, title
 	return &out, nil
 }
 
-// JudgeExerciseAnswers scores answers via JSON chat completion.
-func JudgeExerciseAnswers(ctx context.Context, c ChatCompleter, model string, title, passage string, items []AnswerJudgeItem) (map[string]bool, error) {
+// JudgeExerciseAnswers scores answers via JSON chat completion. Results are ordered like items; any missing id is treated incorrect.
+func JudgeExerciseAnswers(ctx context.Context, c ChatCompleter, model string, title, passage string, items []AnswerJudgeItem) ([]AnswerJudgment, error) {
 	if c == nil {
 		return nil, fmt.Errorf("chat: nil completer")
 	}
 	if len(items) == 0 {
-		return map[string]bool{}, nil
+		return nil, nil
 	}
 	itemsJSON, err := json.Marshal(items)
 	if err != nil {
@@ -120,16 +120,38 @@ func JudgeExerciseAnswers(ctx context.Context, c ChatCompleter, model string, ti
 		Results []struct {
 			QuestionID string `json:"question_id"`
 			IsCorrect  bool   `json:"is_correct"`
+			Feedback   string `json:"feedback"`
 		} `json:"results"`
 	}
 	if err := json.Unmarshal([]byte(text), &parsed); err != nil {
 		return nil, fmt.Errorf("judge JSON: %w", err)
 	}
-	out := make(map[string]bool, len(parsed.Results))
+	byID := make(map[string]AnswerJudgment, len(parsed.Results))
 	for _, r := range parsed.Results {
-		if r.QuestionID != "" {
-			out[r.QuestionID] = r.IsCorrect
+		if r.QuestionID == "" {
+			continue
 		}
+		fb := strings.TrimSpace(r.Feedback)
+		if fb == "" {
+			if r.IsCorrect {
+				fb = "せいかい！よくできました。"
+			} else {
+				fb = "まだちがうみたい。またよんでみよう。"
+			}
+		}
+		byID[r.QuestionID] = AnswerJudgment{QuestionID: r.QuestionID, IsCorrect: r.IsCorrect, Feedback: fb}
+	}
+	out := make([]AnswerJudgment, 0, len(items))
+	for _, it := range items {
+		if j, ok := byID[it.ID]; ok {
+			out = append(out, j)
+			continue
+		}
+		out = append(out, AnswerJudgment{
+			QuestionID: it.ID,
+			IsCorrect:  false,
+			Feedback:   "さいてんのけっかがとれませんでした。もういちどためしてね。",
+		})
 	}
 	return out, nil
 }

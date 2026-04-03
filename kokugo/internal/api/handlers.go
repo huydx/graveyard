@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -40,16 +41,16 @@ func (s *Server) err(w http.ResponseWriter, status int, msg string) {
 func (s *Server) Health(w http.ResponseWriter, r *http.Request) {
 	rt := s.lm()
 	s.json(w, http.StatusOK, map[string]any{
-		"geminiConnected":       rt.imageParser != nil,
-		"speechTranscribeOK":    rt.transcribeOK && rt.summaryChat != nil,
-		"childName":             s.Cfg.ChildName,
-		"llmProvider":           s.Cfg.LLMProvider,
-		"parseStrategy":         rt.effParseStrat,
-		"chatBackend":           rt.effSummaryBackend,
-		"chatBackendSummary":    rt.effSummaryBackend,
-		"chatBackendJudge":      rt.effJudgeBackend,
-		"rubyBackend":           rt.effRubyBackend,
-		"ollamaBaseUrl":         rt.effOllamaURL,
+		"geminiConnected":    rt.imageParser != nil,
+		"speechTranscribeOK": rt.transcribeOK && rt.summaryChat != nil,
+		"childName":          s.Cfg.ChildName,
+		"llmProvider":        s.Cfg.LLMProvider,
+		"parseStrategy":      rt.effParseStrat,
+		"chatBackend":        rt.effSummaryBackend,
+		"chatBackendSummary": rt.effSummaryBackend,
+		"chatBackendJudge":   rt.effJudgeBackend,
+		"rubyBackend":        rt.effRubyBackend,
+		"ollamaBaseUrl":      rt.effOllamaURL,
 	})
 }
 
@@ -401,6 +402,7 @@ func (s *Server) GetExercise(w http.ResponseWriter, r *http.Request) {
 		pub = append(pub, map[string]any{
 			"id": q.ID, "exerciseId": q.ExerciseID, "sortOrder": q.SortOrder,
 			"type": q.Type, "prompt": q.Prompt, "options": q.Options, "focusWord": q.FocusWord,
+			"scorable": strings.TrimSpace(q.CorrectAnswer) != "",
 		})
 	}
 	s.json(w, http.StatusOK, map[string]any{"exercise": ex, "questions": pub})
@@ -430,8 +432,8 @@ func (s *Server) SubmitAnswers(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusNotFound, "見つかりません")
 		return
 	}
-	correct := 0
 	rt := s.lm()
+	var merged []ai.AnswerJudgment
 	if rt.judgeChat != nil {
 		items := buildAnswerJudgeItems(body.Answers, qs)
 		if len(items) > 0 {
@@ -441,11 +443,14 @@ func (s *Server) SubmitAnswers(w http.ResponseWriter, r *http.Request) {
 				s.err(w, http.StatusBadGateway, "AIの採点に失敗しました: "+err.Error())
 				return
 			}
-			correct = countCorrectWithJudgments(qs, judgments)
+			merged = mergeQuestionResults(qs, judgments, body.Answers)
+		} else {
+			merged = mergeQuestionResults(qs, nil, body.Answers)
 		}
 	} else {
-		correct = scoreAnswersLegacy(body.Answers, qs)
+		merged = legacyJudgmentsForExercise(qs, body.Answers)
 	}
+	correct := countCorrectWithJudgments(qs, judgmentsToMap(merged))
 	pct := 0
 	if len(qs) > 0 {
 		pct = (correct * 100) / len(qs)
@@ -455,9 +460,80 @@ func (s *Server) SubmitAnswers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.json(w, http.StatusOK, map[string]any{
-		"scorePercent": pct,
-		"correct":      correct,
-		"total":        len(qs),
+		"scorePercent":    pct,
+		"correct":         correct,
+		"total":           len(qs),
+		"questionResults": wireQuestionResults(qs, body.Answers, merged),
+	})
+}
+
+type checkQuestionBody struct {
+	Answer string `json:"answer"`
+}
+
+func (s *Server) CheckQuestion(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.err(w, http.StatusMethodNotAllowed, "POST のみ")
+		return
+	}
+	eid := r.PathValue("id")
+	qid := r.PathValue("questionId")
+	if eid == "" || qid == "" {
+		s.err(w, http.StatusBadRequest, "IDが不正です")
+		return
+	}
+	var body checkQuestionBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		s.err(w, http.StatusBadRequest, "JSONが不正です")
+		return
+	}
+	ex, qs, err := s.Store.GetExercise(r.Context(), eid)
+	if err != nil {
+		s.err(w, http.StatusNotFound, "見つかりません")
+		return
+	}
+	var q *store.Question
+	for i := range qs {
+		if qs[i].ID == qid {
+			q = &qs[i]
+			break
+		}
+	}
+	if q == nil {
+		s.err(w, http.StatusNotFound, "もんだいが見つかりません")
+		return
+	}
+	if strings.TrimSpace(q.CorrectAnswer) == "" {
+		s.err(w, http.StatusBadRequest, "このもんだいは自動さいていのたいしょう外です")
+		return
+	}
+	ua := strings.TrimSpace(body.Answer)
+	rt := s.lm()
+	var j ai.AnswerJudgment
+	if rt.judgeChat != nil {
+		items := []ai.AnswerJudgeItem{{
+			ID: q.ID, Type: q.Type, Prompt: q.Prompt, Options: q.Options,
+			Correct: q.CorrectAnswer, UserAnswer: ua,
+		}}
+		list, err := ai.JudgeExerciseAnswers(r.Context(), rt.judgeChat, rt.judgeModel, ex.Title, ex.Passage, items)
+		if err != nil {
+			log.Printf("check_question: %v", err)
+			s.err(w, http.StatusBadGateway, "AIの採点に失敗しました: "+err.Error())
+			return
+		}
+		if len(list) != 1 {
+			j = legacyAnswerJudgment(q, ua)
+		} else {
+			j = list[0]
+		}
+	} else {
+		j = legacyAnswerJudgment(q, ua)
+	}
+	s.json(w, http.StatusOK, map[string]any{
+		"questionId": q.ID,
+		"prompt":     q.Prompt,
+		"isCorrect":  j.IsCorrect,
+		"feedback":   j.Feedback,
 	})
 }
 
@@ -497,25 +573,117 @@ func countCorrectWithJudgments(qs []store.Question, judge map[string]bool) int {
 	return n
 }
 
-func scoreAnswersLegacy(answers map[string]string, qs []store.Question) int {
-	n := 0
+func judgmentsToMap(list []ai.AnswerJudgment) map[string]bool {
+	m := make(map[string]bool, len(list))
+	for _, j := range list {
+		m[j.QuestionID] = j.IsCorrect
+	}
+	return m
+}
+
+func mergeQuestionResults(qs []store.Question, judged []ai.AnswerJudgment, answers map[string]string) []ai.AnswerJudgment {
+	byID := make(map[string]ai.AnswerJudgment, len(judged))
+	for _, j := range judged {
+		byID[j.QuestionID] = j
+	}
+	out := make([]ai.AnswerJudgment, 0, len(qs))
 	for _, q := range qs {
-		ua := strings.TrimSpace(answers[q.ID])
 		ca := strings.TrimSpace(q.CorrectAnswer)
 		if ca == "" {
+			out = append(out, ai.AnswerJudgment{
+				QuestionID: q.ID,
+				IsCorrect:  false,
+				Feedback:   "このもんだいは自動さいていのたいしょう外です。",
+			})
 			continue
 		}
-		var match bool
-		if strings.EqualFold(q.Type, "voice") {
-			match = norm(ua) == norm(plainAnswerForCompare(ca))
-		} else {
-			match = norm(ua) == norm(ca)
+		if j, ok := byID[q.ID]; ok {
+			out = append(out, j)
+			continue
 		}
-		if match {
-			n++
+		ua := ""
+		if answers != nil {
+			ua = strings.TrimSpace(answers[q.ID])
+		}
+		out = append(out, legacyAnswerJudgment(&q, ua))
+	}
+	return out
+}
+
+func legacyJudgmentsForExercise(qs []store.Question, answers map[string]string) []ai.AnswerJudgment {
+	out := make([]ai.AnswerJudgment, 0, len(qs))
+	for _, q := range qs {
+		ua := ""
+		if answers != nil {
+			ua = strings.TrimSpace(answers[q.ID])
+		}
+		out = append(out, legacyAnswerJudgment(&q, ua))
+	}
+	return out
+}
+
+func legacyAnswerJudgment(q *store.Question, userAnswer string) ai.AnswerJudgment {
+	ua := strings.TrimSpace(userAnswer)
+	ca := strings.TrimSpace(q.CorrectAnswer)
+	if ca == "" {
+		return ai.AnswerJudgment{
+			QuestionID: q.ID,
+			IsCorrect:  false,
+			Feedback:   "このもんだいは自動さいていのたいしょう外です。",
 		}
 	}
-	return n
+	if ua == "" {
+		return ai.AnswerJudgment{
+			QuestionID: q.ID,
+			IsCorrect:  false,
+			Feedback:   "こたえをいれてから、かくにんしてね。",
+		}
+	}
+	var match bool
+	if strings.EqualFold(q.Type, "voice") {
+		match = norm(ua) == norm(plainAnswerForCompare(ca))
+	} else {
+		match = norm(ua) == norm(ca)
+	}
+	if match {
+		return ai.AnswerJudgment{
+			QuestionID: q.ID,
+			IsCorrect:  true,
+			Feedback:   "せいかい！よくできました。",
+		}
+	}
+	plain := plainAnswerForCompare(ca)
+	if len([]rune(plain)) > 100 {
+		plain = string([]rune(plain)[:100]) + "…"
+	}
+	return ai.AnswerJudgment{
+		QuestionID: q.ID,
+		IsCorrect:  false,
+		Feedback:   fmt.Sprintf("ざんねん、まだちがいます。せいかいの例は「%s」です。", plain),
+	}
+}
+
+func wireQuestionResults(qs []store.Question, answers map[string]string, merged []ai.AnswerJudgment) []map[string]any {
+	byID := make(map[string]ai.AnswerJudgment, len(merged))
+	for _, j := range merged {
+		byID[j.QuestionID] = j
+	}
+	out := make([]map[string]any, 0, len(qs))
+	for _, q := range qs {
+		j := byID[q.ID]
+		ua := ""
+		if answers != nil {
+			ua = strings.TrimSpace(answers[q.ID])
+		}
+		out = append(out, map[string]any{
+			"questionId": q.ID,
+			"prompt":     q.Prompt,
+			"userAnswer": ua,
+			"isCorrect":  j.IsCorrect,
+			"feedback":   j.Feedback,
+		})
+	}
+	return out
 }
 
 func (s *Server) GenerateSummary(w http.ResponseWriter, r *http.Request) {
@@ -635,6 +803,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/exercises/{id}/image", s.ExerciseImage)
 	mux.HandleFunc("GET /api/exercises/{id}", s.GetExercise)
 	mux.HandleFunc("POST /api/exercises/{id}/submit", s.SubmitAnswers)
+	mux.HandleFunc("POST /api/exercises/{id}/questions/{questionId}/check", s.CheckQuestion)
 	mux.HandleFunc("POST /api/exercises/{id}/summary", s.GenerateSummary)
 	mux.HandleFunc("GET /api/exercises/{id}/summary", s.GetSummary)
 	mux.HandleFunc("GET /api/history", s.History)
