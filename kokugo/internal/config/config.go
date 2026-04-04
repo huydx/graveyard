@@ -6,6 +6,9 @@ import (
 	"strings"
 )
 
+// DefaultOcrServerURL is used when KOKUGO_OCR_SERVER_URL and DB ocr_server_url are empty.
+const DefaultOcrServerURL = "http://huydx1:8000"
+
 // Config holds server and integration settings.
 type Config struct {
 	ListenAddr           string
@@ -14,14 +17,15 @@ type Config struct {
 	LLMProvider          string // gemini (default) | ollama — worksheet image parsing
 	ChatBackendSummary   string // gemini | ollama — summary + transcribe (OpenAI-shaped chat)
 	ChatBackendJudge     string // gemini | ollama — answer judging
-	RubyBackend          string // gemini | ollama — three_step step 3 (furigana JSON)
+	RubyBackend          string // gemini | ollama — three_step strategy: model for step 2 (OCR→JSON with ruby)
 	GoogleKey            string
 	GeminiModel          string
 	GeminiJudgeModel     string
 	OllamaBaseURL        string
 	OllamaModel          string
 	OllamaChatModel      string // text/JSON model for chat when using Ollama backend
-	ParseStrategy        string // three_step | one_shot
+	ParseStrategy        string // three_step | three_step_remote_ocr | one_shot
+	OcrServerURL         string // PaddleOCR HTTP API base (KOKUGO_OCR_SERVER_URL); empty uses default host
 	ChildName            string
 	ParseMaxOutputTokens int
 }
@@ -63,6 +67,7 @@ func Load() Config {
 	if parseStrategy == "" {
 		parseStrategy = "three_step"
 	}
+	ocrServer := strings.TrimSpace(os.Getenv("KOKUGO_OCR_SERVER_URL"))
 	ollamaURL := strings.TrimSpace(os.Getenv("OLLAMA_BASE_URL"))
 	if ollamaURL == "" {
 		ollamaURL = "http://127.0.0.1:11434"
@@ -88,6 +93,7 @@ func Load() Config {
 		OllamaModel:          ollamaModel,
 		OllamaChatModel:      ollamaChat,
 		ParseStrategy:        parseStrategy,
+		OcrServerURL:         ocrServer,
 		ChildName:            child,
 		ParseMaxOutputTokens: parseMaxOut,
 	}

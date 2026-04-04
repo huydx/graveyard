@@ -3,6 +3,7 @@ import type {
   Exercise,
   HealthResponse,
   LearningSummary,
+  OllamaCheckResponse,
   Question,
   QuestionCheckResult,
   SubmitResult,
@@ -44,7 +45,10 @@ export function getAppSettings() {
 
 export type PutAppSettingsBody = {
   ollamaBaseUrl?: string;
+  ollamaModel?: string;
+  ollamaChatModel?: string;
   parseStrategy?: string;
+  ocrServerUrl?: string;
   summaryChatBackend?: string;
   judgeChatBackend?: string;
   rubyBackend?: string;
@@ -59,6 +63,14 @@ export function putAppSettings(body: PutAppSettingsBody) {
     method: "PUT",
     body: JSON.stringify(body),
   });
+}
+
+export function getOllamaCheck(baseUrl?: string) {
+  const q =
+    baseUrl !== undefined && baseUrl.trim() !== ""
+      ? `?baseUrl=${encodeURIComponent(baseUrl.trim())}`
+      : "";
+  return api<OllamaCheckResponse>(`/api/settings/ollama-check${q}`);
 }
 
 export function uploadScan(file: File) {

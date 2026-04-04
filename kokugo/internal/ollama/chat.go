@@ -99,20 +99,31 @@ func (c *ChatClient) CreateChatCompletion(ctx context.Context, req ai.ChatComple
 
 	resp, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
+		log.Printf("ollama_chat_error phase=request url=%s model=%s err=%v", url, model, err)
 		return nil, fmt.Errorf("ollama chat: %w", err)
 	}
 	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, errRead := io.ReadAll(resp.Body)
+	if errRead != nil {
+		log.Printf("ollama_chat_error phase=read_body url=%s model=%s err=%v", url, model, errRead)
+		return nil, fmt.Errorf("ollama chat read body: %w", errRead)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		log.Printf("ollama_chat_error phase=http url=%s model=%s status=%d body=%s",
+			url, model, resp.StatusCode, truncateStr(string(respBody), 800))
 		return nil, fmt.Errorf("ollama chat http %d: %s", resp.StatusCode, truncateStr(string(respBody), 500))
 	}
 
 	var out chatResponse
 	if err := json.Unmarshal(respBody, &out); err != nil {
+		log.Printf("ollama_chat_error phase=json_decode url=%s model=%s body=%s err=%v",
+			url, model, truncateStr(string(respBody), 800), err)
 		return nil, fmt.Errorf("ollama chat decode: %w", err)
 	}
 	text := strings.TrimSpace(out.Message.Content)
 	if text == "" {
+		log.Printf("ollama_chat_error phase=empty_assistant url=%s model=%s raw=%s",
+			url, model, truncateStr(string(respBody), 800))
 		return nil, fmt.Errorf("ollama chat: empty assistant message")
 	}
 	return &ai.ChatCompletionResponse{

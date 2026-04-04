@@ -69,15 +69,18 @@ func (c *Client) CreateChatCompletion(ctx context.Context, req ai.ChatCompletion
 		return nil, fmt.Errorf("gemini chat: no user/model messages")
 	}
 
+	jsonMode := req.ResponseFormat != nil && req.ResponseFormat.Type == "json_object"
 	resp, err := c.genai.Models.GenerateContent(ctx, model, contents, cfg)
 	if err != nil {
-		log.Printf("gemini_chat_error model=%s err=%v", model, err)
-		return nil, err
+		log.Printf("gemini_chat_error op=GenerateContent model=%s json=%v structured=%d user_msgs=%d err=%v",
+			model, jsonMode, int(req.GeminiStructured), len(contents), err)
+		return nil, fmt.Errorf("gemini GenerateContent: %w", err)
 	}
 	logUsage("chat_completion", model, resp)
 	text, err := extractText(resp)
 	if err != nil {
-		return nil, err
+		logGeminiChatFailure("chat_completion", model, resp, err)
+		return nil, fmt.Errorf("gemini extract: %w", err)
 	}
 	return &ai.ChatCompletionResponse{
 		Choices: []ai.ChatCompletionChoice{

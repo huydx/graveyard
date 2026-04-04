@@ -1,9 +1,16 @@
 package ai
 
+import "context"
+
 // ImagePart is one page or image blob passed to vision-capable models.
 type ImagePart struct {
 	Data []byte
 	MIME string
+}
+
+// PageOCR extracts plain text from one worksheet image (e.g. remote PaddleOCR HTTP API).
+type PageOCR interface {
+	ExtractText(ctx context.Context, page ImagePart) (string, error)
 }
 
 // ContentPart is one segment of a worksheet-parse turn: text and/or an inline image.

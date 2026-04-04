@@ -241,19 +241,6 @@ h3 {
   gap: 0.75rem;
   margin-top: 0.5rem;
 }
-.scan-capture-size,
-.camera-capture-size {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  margin-top: 0.75rem;
-}
-.scan-capture-size label,
-.camera-capture-size label {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--blue-800);
-}
 .input-select {
   width: 100%;
   max-width: 100%;
@@ -270,9 +257,6 @@ h3 {
 .input-select:focus-visible {
   outline: 2px solid var(--blue-500);
   outline-offset: 2px;
-}
-.camera-capture-size {
-  margin-top: 0.5rem;
 }
 .scan-page-strip {
   margin-top: 1rem;
@@ -863,6 +847,20 @@ rt {
 .settings-field > label:first-of-type {
   font-weight: 700;
   font-size: 0.95rem;
+}
+.settings-inline-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+.settings-inline-row .input-select {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.settings-inline-row .btn {
+  flex: 0 0 auto;
+  align-self: center;
 }
 .small-gap {
   margin-bottom: 0.5rem;

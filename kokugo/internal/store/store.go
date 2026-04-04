@@ -140,6 +140,19 @@ func (s *Store) migrate() error {
 		WHERE id = 1`); err != nil {
 		return fmt.Errorf("migrate app_settings backfill role backends: %w", err)
 	}
+	for _, col := range []string{`ollama_model`, `ollama_chat_model`} {
+		q := `ALTER TABLE app_settings ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`
+		if _, err := s.db.Exec(q); err != nil {
+			if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+				return fmt.Errorf("migrate app_settings %s: %w", col, err)
+			}
+		}
+	}
+	if _, err := s.db.Exec(`ALTER TABLE app_settings ADD COLUMN ocr_server_url TEXT NOT NULL DEFAULT ''`); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+			return fmt.Errorf("migrate app_settings ocr_server_url: %w", err)
+		}
+	}
 	return nil
 }
 

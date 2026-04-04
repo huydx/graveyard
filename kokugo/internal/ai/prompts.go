@@ -1,54 +1,59 @@
 package ai
 
-// Prompts for the three-step pipeline: (1) OCR (2) structure (3) ruby
+// Prompts for the two-step pipeline: (1) OCR (2) structure + ruby in one JSON call. Settings still use the id three_step.
 
 const Step1OCRSystem = `あなたは日本語のOCRアシスタントです。画像に写っている文字を読み取ります。
 プレーンテキストだけを出力してください。
 - JSON・HTML・マークダウン・ふりがな（ruby）は付けない。
 - 改行は読みやすいように保つ。
 - 推測は最小限。読めない部分は空行のままか [?] とする。
-- 説明文や「以下は…」などの前置きは書かない。`
+- 説明文や「以下は…」などの前置きは書かない。
+- 明らかな誤認（似た漢字・英字や記号の混入・不自然な別字など）は、文脈から最小限だけ直して普通の日本語のプリントに見えるようにしてよい。意味や設問の意図は変えない。`
 
 const Step1OCRSingleUser = `この画像に写っている教材の文字をすべて書き写してください。`
 
 const Step1OCRPageUser = `これは教材の %d / 全 %d ページです。このページに写っている文字をすべて書き写してください。他ページの内容は含めないでください。`
 
-const Step2StructureSystem = `あなたは小学校の国語の先生です。与えられたプリントのテキストから教材データをJSONだけで返します。
-漢字にはまだふりがなを付けない。プレーンテキストの日本語のみ。HTMLタグは禁止（voice の correct はひらがな中心のプレーンテキスト）。`
+// Step23FromOCR* — one call: plain OCR text → ParsedExercise JSON with <ruby> (no separate structure-only step).
 
-const Step2StructureUser = `次のテキストはプリントの読み取り結果です。JSONスキーマに従って構造化してください。
+const Step23FromOCRSystem = `あなたは小学校の国語の先生です。与えられたテキストはプリントのOCR読み取り結果です。
+JSONスキーマに従い教材データを1回で返します。
 
---- プリントテキスト ---
-%s
----
+【OCRの最小補正】
+- テキストに誤字・別字・記号の取り違え・英字の混入など不自然な箇所があれば、文脈に沿って最小限だけ直し、普通の教材の日本語に見えるようにする。言い換え・要約・内容の追加はしない。
 
-ルール:
-- type が voice のときは options は空配列。correct はひらがな中心のプレーンテキストのみ（タグ禁止）。
-- type が choice のときは4択、options に4つ、correct は正解と同じ文字列（プレーン日本語、ruby なし）。
-- 問題は最大12問まで（重要な設問から）。
-- passage は約1200文字以内の要約。長文の注意書きは省いてよい。
-- title / passage / prompt / options はすべてプレーン日本語（ruby 禁止）。`
+【原文を変えない】
+- 上記の補正後の文面を「原文」とみなす。語の言い換え・要約・推敲・順序の入れ替えは禁止。原文にない漢字・語句・数字を創作しない。
+- title / passage / questions[].prompt / questions[].options[] は、その原文の該当箇所をできるだけそのまま写す（コピーに近い形）。
+- やむをない場合のみ、スキーマを満たすための最小限の補足にとどめる（例: 明らかに欠けた選択肢の1語だけ、など）。
+- passage は「別の文章に要約し直す」のではなく、教材本文としてテキスト内から取れる範囲をそのまま使う。長すぎるときは途中で切り詰めてよいが、言い換えない（約1200文字目安）。
 
-const Step3RubySystem = `あなたは小学校向け国語教材の編集者です。与えられたJSONの日本語に、子ども向けのふりがな（HTMLの ruby）だけを追加してください。
-JSONのキー名・構造・配列の順序・問題の個数は変えない。`
-
-const Step3RubyUser = `次のJSONを、同じ構造のまま返してください。変更点は次のとおり:
-- title, passage, questions[].prompt, questions[].options[], questions[].focus_word の日本語の漢字に <ruby>漢字<rt>よみ</rt></ruby> を付ける。
+【ふりがな】
+- title, passage, questions[].prompt, questions[].options[], questions[].focus_word の漢字に、子ども向けの <ruby>漢字<rt>よみ</rt></ruby> を付ける。漢字の字形・語の表記は変えない（ruby で囲む以外は補正後の原文と同じになること）。
 - ひらがな・カタカナのみの語には ruby 不要。
-- questions[].type が voice の **correct** は読み上げ用のため、**ひらがなのまま**（ruby も HTML も付けない）。
-- questions[].type が choice の **correct** は options のいずれかと同じ文字列にし、**ruby 付きHTML**でよい。
-長い本文では文または短い節ごとに1つの ruby にまとめてよい。
 
---- 入力JSON ---
+【設問】
+- type が voice: options は空配列。correct はテキストから取れる読み上げ用の答えをひらがなで。無い場合のみ最小限の推測。ruby・HTML 禁止。
+- type が choice: options に4つ（テキスト上の選択肢をそのまま優先）。correct は options のいずれかと完全一致する文字列で、ruby 付き HTML でよい。
+- 問題は最大12問（テキストに現れる重要な設問から）。`
+
+const Step23FromOCRUser = `次のブロック全体がプリントの読み取り結果です。上のルールに従い JSON だけを返してください。
+
+--- プリントテキスト（OCR） ---
 %s
 ---`
 
 // One-shot vision: single JSON output (with ruby), for models that handle long structured output in one call.
 
 const OneShotSystem = `あなたは小学校の国語の先生です。画像の教材を読み、JSONだけで返します。
-- title, passage, questions[].prompt, questions[].options[], questions[].focus_word の漢字に <ruby>漢字<rt>よみ</rt></ruby> を付ける。
+
+【読み取りの最小補正】画像から読むとき、明らかな誤認（似た字・記号混入など）は文脈で最小限だけ直し、普通の日本語のプリントに見えるようにする。内容の言い換えや創作はしない。
+
+【原文を変えない】上記補正後の表記を正とし、言い換え・要約し直し・創作は禁止。title / passage / prompt / options は画像（補正後）にできるだけ忠実に。passage は要約ではなく本文の写し（長いときは切り詰め可、言い換え不可）。約1200文字目安。
+
+【ふりがな】漢字に <ruby>漢字<rt>よみ</rt></ruby> を付ける（字形・表記は変えない）。ひらがな・カタカナのみは ruby 不要。
 - questions[].type が voice の correct はひらがなのみ（ruby 禁止）。choice の correct は options のいずれかと一致し ruby 付きHTML可。
-- 問題は最大12問。passage は約1200文字以内の要約。前置きや説明文は出さない。`
+- 問題は最大12問。前置きや説明文は出さない。`
 
 const OneShotSingleUser = `この画像の教材を構造化してください。`
 
@@ -100,6 +105,10 @@ const JudgeAnswersUserTemplate = `教材タイトル: %s
 - type が choice（選択）: user_answer が correct と同じ内容、または正しい選択肢を指していれば正解。選択肢 options も参照してよい。
 - 空の user_answer は原則不正解（未回答）。feedback では「こたえをいれてね」など短く促す。
 - 入力JSONに含まれるすべての id を、results に必ず1件ずつ含めること（question_id は id と同じ文字列）。各件に feedback を必ず含める。
+- トップレベルは必ずオブジェクトで、キー名は results の配列を使うこと（result だけ・配列だけ・別名キーは解析に失敗しやすい）。
+
+出力JSONの例（構造はこの通り。中身は設問に合わせてかえよ）:
+{"results":[{"question_id":"(上の設問JSONの id と同じ文字列)","is_correct":true,"feedback":"よくできました。"}]}
 
 --- 設問JSON ---
 %s

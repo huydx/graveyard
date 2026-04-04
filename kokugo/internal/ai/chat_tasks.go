@@ -5,7 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
+	"unicode/utf8"
 )
 
 // TranscribeAnswerAudio runs speech-to-text via ChatCompletion (multimodal user message).
@@ -75,6 +77,26 @@ func SummarizeLearning(ctx context.Context, c ChatCompleter, model string, title
 	return &out, nil
 }
 
+func truncateJudgeLog(s string, maxRunes int) string {
+	s = strings.TrimSpace(s)
+	if maxRunes <= 0 {
+		return ""
+	}
+	if utf8.RuneCountInString(s) <= maxRunes {
+		return s
+	}
+	var b strings.Builder
+	n := 0
+	for _, r := range s {
+		if n >= maxRunes {
+			break
+		}
+		b.WriteRune(r)
+		n++
+	}
+	return b.String() + "…"
+}
+
 // JudgeExerciseAnswers scores answers via JSON chat completion. Results are ordered like items; any missing id is treated incorrect.
 func JudgeExerciseAnswers(ctx context.Context, c ChatCompleter, model string, title, passage string, items []AnswerJudgeItem) ([]AnswerJudgment, error) {
 	if c == nil {
@@ -88,14 +110,17 @@ func JudgeExerciseAnswers(ctx context.Context, c ChatCompleter, model string, ti
 		return nil, err
 	}
 	passageTrim := strings.TrimSpace(passage)
+	passageSent := passageTrim
 	if len(passageTrim) > 2000 {
-		passageTrim = passageTrim[:2000] + "…"
+		passageSent = passageTrim[:2000] + "…"
 	}
 	user := fmt.Sprintf(JudgeAnswersUserTemplate,
 		strings.TrimSpace(title),
-		passageTrim,
+		passageSent,
 		string(itemsJSON),
 	)
+	log.Printf("judge_answers: request model=%s items=%d title_runes=%d passage_runes=%d user_prompt_runes=%d items_json_bytes=%d",
+		model, len(items), utf8.RuneCountInString(title), utf8.RuneCountInString(passageTrim), utf8.RuneCountInString(user), len(itemsJSON))
 	req := ChatCompletionRequest{
 		Model:       model,
 		Temperature: 0.1,
@@ -109,25 +134,31 @@ func JudgeExerciseAnswers(ctx context.Context, c ChatCompleter, model string, ti
 	}
 	resp, err := c.CreateChatCompletion(ctx, req)
 	if err != nil {
-		return nil, err
+		log.Printf("judge_answers: CreateChatCompletion failed model=%s items=%d err=%v", model, len(items), err)
+		return nil, fmt.Errorf("judge completion: %w", err)
 	}
 	text, err := FirstAssistantContent(resp)
 	if err != nil {
-		return nil, err
+		log.Printf("judge_answers: assistant content missing model=%s items=%d err=%v", model, len(items), err)
+		return nil, fmt.Errorf("judge assistant: %w", err)
 	}
 	text = StripMarkdownFence(text)
-	var parsed struct {
-		Results []struct {
-			QuestionID string `json:"question_id"`
-			IsCorrect  bool   `json:"is_correct"`
-			Feedback   string `json:"feedback"`
-		} `json:"results"`
-	}
-	if err := json.Unmarshal([]byte(text), &parsed); err != nil {
+	parsedRows, err := parseJudgeResultsJSON(text)
+	if err != nil {
+		log.Printf("judge_answers: JSON parse failed model=%s items=%d assistant_runes=%d snippet=%q err=%v",
+			model, len(items), utf8.RuneCountInString(text), truncateJudgeLog(text, 320), err)
 		return nil, fmt.Errorf("judge JSON: %w", err)
 	}
-	byID := make(map[string]AnswerJudgment, len(parsed.Results))
-	for _, r := range parsed.Results {
+	if len(parsedRows) == 0 && len(items) > 0 {
+		log.Printf("judge_answers: warning model=%s requested_items=%d but JSON results empty snippet=%q",
+			model, len(items), truncateJudgeLog(text, 400))
+	} else if len(parsedRows) != len(items) {
+		log.Printf("judge_answers: warning model=%s requested_items=%d parsed_results=%d (unmatched question_id → incorrect)",
+			model, len(items), len(parsedRows))
+	}
+	log.Printf("judge_answers: ok model=%s items=%d parsed_results=%d", model, len(items), len(parsedRows))
+	byID := make(map[string]AnswerJudgment, len(parsedRows))
+	for _, r := range parsedRows {
 		if r.QuestionID == "" {
 			continue
 		}

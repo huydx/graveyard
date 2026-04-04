@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/huydx/kokugo/internal/ai"
 	"github.com/huydx/kokugo/internal/config"
@@ -51,6 +52,7 @@ func (s *Server) Health(w http.ResponseWriter, r *http.Request) {
 		"chatBackendJudge":   rt.effJudgeBackend,
 		"rubyBackend":        rt.effRubyBackend,
 		"ollamaBaseUrl":      rt.effOllamaURL,
+		"ocrServerUrl":       rt.effOcrServerURL,
 	})
 }
 
@@ -435,11 +437,13 @@ func (s *Server) SubmitAnswers(w http.ResponseWriter, r *http.Request) {
 	rt := s.lm()
 	var merged []ai.AnswerJudgment
 	if rt.judgeChat != nil {
-		items := buildAnswerJudgeItems(body.Answers, qs)
+		items := buildAnswerJudgeItemsLLM(body.Answers, qs)
 		if len(items) > 0 {
+			log.Printf("judge_http: op=submit exercise_id=%s backend=%s model=%s llm_voice_items=%d questions_total=%d",
+				id, rt.effJudgeBackend, rt.judgeModel, len(items), len(qs))
 			judgments, err := ai.JudgeExerciseAnswers(r.Context(), rt.judgeChat, rt.judgeModel, ex.Title, ex.Passage, items)
 			if err != nil {
-				log.Printf("judge_answers: %v", err)
+				log.Printf("judge_http: op=submit exercise_id=%s backend=%s model=%s FAILED err=%v", id, rt.effJudgeBackend, rt.judgeModel, err)
 				s.err(w, http.StatusBadGateway, "AIの採点に失敗しました: "+err.Error())
 				return
 			}
@@ -510,14 +514,17 @@ func (s *Server) CheckQuestion(w http.ResponseWriter, r *http.Request) {
 	ua := strings.TrimSpace(body.Answer)
 	rt := s.lm()
 	var j ai.AnswerJudgment
-	if rt.judgeChat != nil {
+	if rt.judgeChat != nil && isVoiceQuestion(q) {
 		items := []ai.AnswerJudgeItem{{
 			ID: q.ID, Type: q.Type, Prompt: q.Prompt, Options: q.Options,
 			Correct: q.CorrectAnswer, UserAnswer: ua,
 		}}
+		log.Printf("judge_http: op=check_question exercise_id=%s question_id=%s backend=%s model=%s answer_runes=%d q_type=%s (llm)",
+			eid, qid, rt.effJudgeBackend, rt.judgeModel, utf8.RuneCountInString(ua), q.Type)
 		list, err := ai.JudgeExerciseAnswers(r.Context(), rt.judgeChat, rt.judgeModel, ex.Title, ex.Passage, items)
 		if err != nil {
-			log.Printf("check_question: %v", err)
+			log.Printf("judge_http: op=check_question exercise_id=%s question_id=%s backend=%s model=%s FAILED err=%v",
+				eid, qid, rt.effJudgeBackend, rt.judgeModel, err)
 			s.err(w, http.StatusBadGateway, "AIの採点に失敗しました: "+err.Error())
 			return
 		}
@@ -527,6 +534,10 @@ func (s *Server) CheckQuestion(w http.ResponseWriter, r *http.Request) {
 			j = list[0]
 		}
 	} else {
+		if rt.judgeChat != nil {
+			log.Printf("judge_http: op=check_question exercise_id=%s question_id=%s q_type=%s (text_only)",
+				eid, qid, q.Type)
+		}
 		j = legacyAnswerJudgment(q, ua)
 	}
 	s.json(w, http.StatusOK, map[string]any{
@@ -541,9 +552,18 @@ func norm(s string) string {
 	return strings.TrimSpace(strings.ToLower(s))
 }
 
-func buildAnswerJudgeItems(answers map[string]string, qs []store.Question) []ai.AnswerJudgeItem {
+// isVoiceQuestion is true for free-text / voice answers. Choice questions use text comparison only.
+func isVoiceQuestion(q *store.Question) bool {
+	return strings.EqualFold(strings.TrimSpace(q.Type), "voice")
+}
+
+// buildAnswerJudgeItemsLLM returns items sent to the LLM judge (voice only; choice uses legacy text match).
+func buildAnswerJudgeItemsLLM(answers map[string]string, qs []store.Question) []ai.AnswerJudgeItem {
 	var items []ai.AnswerJudgeItem
 	for _, q := range qs {
+		if !isVoiceQuestion(&q) {
+			continue
+		}
 		ca := strings.TrimSpace(q.CorrectAnswer)
 		if ca == "" {
 			continue
@@ -643,7 +663,9 @@ func legacyAnswerJudgment(q *store.Question, userAnswer string) ai.AnswerJudgmen
 	if strings.EqualFold(q.Type, "voice") {
 		match = norm(ua) == norm(plainAnswerForCompare(ca))
 	} else {
-		match = norm(ua) == norm(ca)
+		// choice: strict text check; correct may include <ruby> from parse pipeline
+		pc := plainAnswerForCompare(ca)
+		match = norm(ua) == norm(ca) || norm(ua) == norm(pc)
 	}
 	if match {
 		return ai.AnswerJudgment{
@@ -792,6 +814,7 @@ func (s *Server) ReviewCard(w http.ResponseWriter, r *http.Request) {
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/health", s.Health)
 	mux.HandleFunc("GET /api/settings", s.GetSettings)
+	mux.HandleFunc("GET /api/settings/ollama-check", s.GetOllamaCheck)
 	mux.HandleFunc("PUT /api/settings", s.PutSettings)
 	mux.HandleFunc("POST /api/settings", s.PutSettings)
 	mux.HandleFunc("POST /api/transcribe", s.TranscribeAudio)

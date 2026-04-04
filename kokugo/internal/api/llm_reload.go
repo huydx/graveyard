@@ -9,6 +9,7 @@ import (
 	"github.com/huydx/kokugo/internal/config"
 	"github.com/huydx/kokugo/internal/gemini"
 	"github.com/huydx/kokugo/internal/ollama"
+	"github.com/huydx/kokugo/internal/paddleocr"
 	"github.com/huydx/kokugo/internal/store"
 )
 
@@ -16,17 +17,18 @@ import (
 type llmRuntime struct {
 	imageParser ai.ExerciseImageParser
 
-	summaryChat    ai.ChatCompleter
-	summaryModel   string
-	judgeChat      ai.ChatCompleter
-	judgeModel     string
-	transcribeOK   bool
+	summaryChat  ai.ChatCompleter
+	summaryModel string
+	judgeChat    ai.ChatCompleter
+	judgeModel   string
+	transcribeOK bool
 
-	effParseStrat       string
-	effOllamaURL        string
-	effSummaryBackend   string
-	effJudgeBackend     string
-	effRubyBackend      string
+	effParseStrat     string
+	effOllamaURL      string
+	effSummaryBackend string
+	effJudgeBackend   string
+	effRubyBackend    string
+	effOcrServerURL   string
 }
 
 func (s *Server) lm() *llmRuntime {
@@ -56,6 +58,36 @@ func MergeAppLLM(cfg config.Config, db store.AppSettings) (ollamaURL, parseStrat
 		googleKey = strings.TrimSpace(cfg.GoogleKey)
 	}
 	return ollamaURL, parseStrat, googleKey
+}
+
+// EffectiveOcrServerURL: DB ocr_server_url → KOKUGO_OCR_SERVER_URL → built-in default.
+func EffectiveOcrServerURL(cfg config.Config, db store.AppSettings) string {
+	if v := strings.TrimSpace(db.OcrServerURL); v != "" {
+		return strings.TrimRight(v, "/")
+	}
+	if v := strings.TrimSpace(cfg.OcrServerURL); v != "" {
+		return strings.TrimRight(v, "/")
+	}
+	return strings.TrimRight(config.DefaultOcrServerURL, "/")
+}
+
+// EffectiveOllamaVisionModel: DB ollama_model → OLLAMA_MODEL env.
+func EffectiveOllamaVisionModel(cfg config.Config, db store.AppSettings) string {
+	if v := strings.TrimSpace(db.OllamaModel); v != "" {
+		return v
+	}
+	return strings.TrimSpace(cfg.OllamaModel)
+}
+
+// EffectiveOllamaChatModel: DB ollama_chat_model → OLLAMA_CHAT_MODEL → OLLAMA_MODEL.
+func EffectiveOllamaChatModel(cfg config.Config, db store.AppSettings) string {
+	if v := strings.TrimSpace(db.OllamaChatModel); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(cfg.OllamaChatModel); v != "" {
+		return v
+	}
+	return strings.TrimSpace(cfg.OllamaModel)
 }
 
 func normalizeMergedBackend(v string) string {
@@ -109,6 +141,7 @@ func (s *Server) ReloadLLM(ctx context.Context) error {
 		return err
 	}
 	ollamaURL, parseStrat, gKey := MergeAppLLM(s.Cfg, db)
+	ocrBase := EffectiveOcrServerURL(s.Cfg, db)
 	maxTok := int32(s.Cfg.ParseMaxOutputTokens)
 
 	var gem *gemini.Client
@@ -121,9 +154,10 @@ func (s *Server) ReloadLLM(ctx context.Context) error {
 		}
 	}
 
+	visionModel := EffectiveOllamaVisionModel(s.Cfg, db)
 	var ollamaEM *ollama.ExerciseModel
-	if strings.TrimSpace(s.Cfg.OllamaModel) != "" {
-		ollamaEM = ollama.NewExerciseModel(ollamaURL, s.Cfg.OllamaModel)
+	if visionModel != "" {
+		ollamaEM = ollama.NewExerciseModel(ollamaURL, visionModel)
 	}
 
 	var vision ai.ExerciseParseModel
@@ -145,13 +179,14 @@ func (s *Server) ReloadLLM(ctx context.Context) error {
 
 	var imageParser ai.ExerciseImageParser
 	if vision != nil {
-		imageParser = newExerciseImageParser(vision, rubyModel, parseStrat, maxTok)
+		imageParser = newExerciseImageParser(vision, rubyModel, parseStrat, maxTok, ocrBase)
 	}
 
 	sumB := MergeSummaryBackend(s.Cfg, db)
 	judgeB := MergeJudgeBackend(s.Cfg, db)
-	summaryChat, summaryModel, transcribeOK := buildSummaryChat(s.Cfg, gem, ollamaURL, sumB)
-	judgeChat, judgeModel := buildJudgeChat(s.Cfg, gem, ollamaURL, judgeB)
+	effOllamaChat := EffectiveOllamaChatModel(s.Cfg, db)
+	summaryChat, summaryModel, transcribeOK := buildSummaryChat(s.Cfg, gem, ollamaURL, sumB, effOllamaChat)
+	judgeChat, judgeModel := buildJudgeChat(s.Cfg, gem, ollamaURL, judgeB, effOllamaChat)
 
 	rt := &llmRuntime{
 		imageParser:       imageParser,
@@ -165,6 +200,7 @@ func (s *Server) ReloadLLM(ctx context.Context) error {
 		effSummaryBackend: sumB,
 		effJudgeBackend:   judgeB,
 		effRubyBackend:    rubyB,
+		effOcrServerURL:   ocrBase,
 	}
 	s.llm.Store(rt)
 	return nil
@@ -189,24 +225,24 @@ func exerciseParseModel(backend string, gem *gemini.Client, ollamaEM *ollama.Exe
 	}
 }
 
-func newExerciseImageParser(vision, ruby ai.ExerciseParseModel, strategy string, maxTok int32) ai.ExerciseImageParser {
+func newExerciseImageParser(vision, ruby ai.ExerciseParseModel, strategy string, maxTok int32, ocrBaseURL string) ai.ExerciseImageParser {
 	switch strings.ToLower(strings.TrimSpace(strategy)) {
 	case "one_shot":
 		return ai.NewOneShotParser(vision, maxTok)
+	case "three_step_remote_ocr":
+		ocr := paddleocr.NewClient(ocrBaseURL, nil)
+		return ai.NewTwoStepParser(vision, ruby, maxTok, ocr)
 	default:
-		return ai.NewThreeStepParser(vision, ruby, maxTok)
+		return ai.NewTwoStepParser(vision, ruby, maxTok, nil)
 	}
 }
 
-func buildSummaryChat(cfg config.Config, gem *gemini.Client, ollamaBaseURL, backend string) (chat ai.ChatCompleter, chatModel string, transcribeOK bool) {
+func buildSummaryChat(cfg config.Config, gem *gemini.Client, ollamaBaseURL, backend, ollamaChatModel string) (chat ai.ChatCompleter, chatModel string, transcribeOK bool) {
 	b := strings.TrimSpace(strings.ToLower(backend))
 	if b == "" || b == "auto" {
 		b = "gemini"
 	}
-	ollamaChat := strings.TrimSpace(cfg.OllamaChatModel)
-	if ollamaChat == "" {
-		ollamaChat = strings.TrimSpace(cfg.OllamaModel)
-	}
+	ollamaChat := strings.TrimSpace(ollamaChatModel)
 	base := strings.TrimSpace(ollamaBaseURL)
 	if base == "" {
 		base = strings.TrimSpace(cfg.OllamaBaseURL)
@@ -226,15 +262,12 @@ func buildSummaryChat(cfg config.Config, gem *gemini.Client, ollamaBaseURL, back
 	}
 }
 
-func buildJudgeChat(cfg config.Config, gem *gemini.Client, ollamaBaseURL, backend string) (chat ai.ChatCompleter, judgeModel string) {
+func buildJudgeChat(cfg config.Config, gem *gemini.Client, ollamaBaseURL, backend, ollamaChatModel string) (chat ai.ChatCompleter, judgeModel string) {
 	b := strings.TrimSpace(strings.ToLower(backend))
 	if b == "" || b == "auto" {
 		b = "gemini"
 	}
-	ollamaChat := strings.TrimSpace(cfg.OllamaChatModel)
-	if ollamaChat == "" {
-		ollamaChat = strings.TrimSpace(cfg.OllamaModel)
-	}
+	ollamaChat := strings.TrimSpace(ollamaChatModel)
 	base := strings.TrimSpace(ollamaBaseURL)
 	if base == "" {
 		base = strings.TrimSpace(cfg.OllamaBaseURL)

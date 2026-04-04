@@ -9,6 +9,36 @@ import (
 	"google.golang.org/genai"
 )
 
+// logGeminiChatFailure logs API response fields that explain missing or unusable text (judge, summary, etc.).
+func logGeminiChatFailure(op, model string, resp *genai.GenerateContentResponse, extractErr error) {
+	if resp == nil {
+		log.Printf("gemini_chat_fail op=%s model=%s err=%v resp=nil", op, model, extractErr)
+		return
+	}
+	var blockReason, blockMsg string
+	if pf := resp.PromptFeedback; pf != nil {
+		blockReason = string(pf.BlockReason)
+		blockMsg = strings.TrimSpace(pf.BlockReasonMessage)
+	}
+	nCand := len(resp.Candidates)
+	var finishReason, finishMsg string
+	var parts int
+	if nCand > 0 && resp.Candidates[0] != nil {
+		c := resp.Candidates[0]
+		finishReason = string(c.FinishReason)
+		finishMsg = strings.TrimSpace(c.FinishMessage)
+		if c.Content != nil {
+			parts = len(c.Content.Parts)
+		}
+	}
+	mv := resp.ModelVersion
+	if mv == "" {
+		mv = model
+	}
+	log.Printf("gemini_chat_fail op=%s model=%s version=%s extract_err=%v candidates=%d parts=%d finish_reason=%s finish_msg=%q block_reason=%s block_msg=%q",
+		op, model, mv, extractErr, nCand, parts, finishReason, finishMsg, blockReason, blockMsg)
+}
+
 func extractText(resp *genai.GenerateContentResponse) (string, error) {
 	if resp == nil || len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil {
 		return "", errors.New("モデルから応答がありません")

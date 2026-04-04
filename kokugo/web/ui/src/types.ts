@@ -33,11 +33,15 @@ export interface HealthResponse {
   chatBackendJudge?: string;
   rubyBackend?: string;
   ollamaBaseUrl?: string;
+  ocrServerUrl?: string;
 }
 
 export interface AppSettingsResponse {
   ollamaBaseUrl: string;
+  ollamaModel: string;
+  ollamaChatModel: string;
   parseStrategy: string;
+  ocrServerUrl: string;
   summaryChatBackend: string;
   judgeChatBackend: string;
   rubyBackend: string;
@@ -45,16 +49,30 @@ export interface AppSettingsResponse {
   hasGeminiKey: boolean;
   geminiKeyEffective: boolean;
   parseStrategyEffective: string;
+  ocrServerUrlEffective: string;
+  envOcrServerUrl: string;
+  defaultOcrServerUrl: string;
   summaryChatBackendEffective: string;
   judgeChatBackendEffective: string;
   rubyBackendEffective: string;
   chatBackendEffective: string;
   envOllamaBaseUrl: string;
+  envOllamaModel: string;
+  envOllamaChatModel: string;
+  ollamaModelEffective: string;
+  ollamaChatModelEffective: string;
   envParseStrategy: string;
   envSummaryChatBackend: string;
   envJudgeChatBackend: string;
   envRubyBackend: string;
   updatedAt?: string;
+}
+
+export interface OllamaCheckResponse {
+  ok: boolean;
+  message?: string;
+  models?: string[];
+  baseUrl?: string;
 }
 
 export interface VocabSummary {

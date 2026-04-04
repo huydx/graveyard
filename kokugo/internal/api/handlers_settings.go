@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/huydx/kokugo/internal/config"
+	"github.com/huydx/kokugo/internal/ollama"
 	"github.com/huydx/kokugo/internal/store"
 )
 
@@ -23,9 +25,12 @@ func (s *Server) GetSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, effParse, effGoogleKey := MergeAppLLM(s.Cfg, db)
+	effOcr := EffectiveOcrServerURL(s.Cfg, db)
 	effSum := MergeSummaryBackend(s.Cfg, db)
 	effJudge := MergeJudgeBackend(s.Cfg, db)
 	effRuby := MergeRubyBackend(s.Cfg, db)
+	effOllamaVision := EffectiveOllamaVisionModel(s.Cfg, db)
+	effOllamaChat := EffectiveOllamaChatModel(s.Cfg, db)
 
 	stored := func(raw string) string {
 		v := strings.TrimSpace(raw)
@@ -35,9 +40,17 @@ func (s *Server) GetSettings(w http.ResponseWriter, r *http.Request) {
 		return v
 	}
 
+	envOllamaChat := strings.TrimSpace(s.Cfg.OllamaChatModel)
+	if envOllamaChat == "" {
+		envOllamaChat = strings.TrimSpace(s.Cfg.OllamaModel)
+	}
+
 	out := map[string]any{
-		"ollamaBaseUrl": db.OllamaBaseURL,
-		"parseStrategy": db.ParseStrategy,
+		"ollamaBaseUrl":   db.OllamaBaseURL,
+		"ollamaModel":     db.OllamaModel,
+		"ollamaChatModel": db.OllamaChatModel,
+		"parseStrategy":   db.ParseStrategy,
+		"ocrServerUrl":    db.OcrServerURL,
 
 		"summaryChatBackend": stored(db.SummaryChatBackend),
 		"judgeChatBackend":   stored(db.JudgeChatBackend),
@@ -47,14 +60,21 @@ func (s *Server) GetSettings(w http.ResponseWriter, r *http.Request) {
 		"hasGeminiKey":       strings.TrimSpace(db.GoogleAPIKey) != "",
 		"geminiKeyEffective": strings.TrimSpace(effGoogleKey) != "",
 
-		"parseStrategyEffective":       effParse,
+		"parseStrategyEffective":      effParse,
+		"ocrServerUrlEffective":       effOcr,
+		"envOcrServerUrl":             strings.TrimSpace(s.Cfg.OcrServerURL),
+		"defaultOcrServerUrl":         config.DefaultOcrServerURL,
 		"summaryChatBackendEffective": effSum,
 		"judgeChatBackendEffective":   effJudge,
 		"rubyBackendEffective":        effRuby,
 		"chatBackendEffective":        effSum,
 
-		"envOllamaBaseUrl": strings.TrimSpace(s.Cfg.OllamaBaseURL),
-		"envParseStrategy": strings.TrimSpace(s.Cfg.ParseStrategy),
+		"envOllamaBaseUrl":         strings.TrimSpace(s.Cfg.OllamaBaseURL),
+		"envOllamaModel":           strings.TrimSpace(s.Cfg.OllamaModel),
+		"envOllamaChatModel":       envOllamaChat,
+		"ollamaModelEffective":     effOllamaVision,
+		"ollamaChatModelEffective": effOllamaChat,
+		"envParseStrategy":         strings.TrimSpace(s.Cfg.ParseStrategy),
 		"envSummaryChatBackend": strings.TrimSpace(
 			firstNonEmpty(os.Getenv("KOKUGO_CHAT_BACKEND_SUMMARY"), os.Getenv("KOKUGO_CHAT_BACKEND")),
 		),
@@ -79,8 +99,11 @@ func firstNonEmpty(a, b string) string {
 }
 
 type putSettingsBody struct {
-	OllamaBaseURL *string `json:"ollamaBaseUrl"`
-	ParseStrategy *string `json:"parseStrategy"`
+	OllamaBaseURL   *string `json:"ollamaBaseUrl"`
+	OllamaModel     *string `json:"ollamaModel"`
+	OllamaChatModel *string `json:"ollamaChatModel"`
+	ParseStrategy   *string `json:"parseStrategy"`
+	OcrServerURL    *string `json:"ocrServerUrl"`
 
 	SummaryChatBackend *string `json:"summaryChatBackend"`
 	JudgeChatBackend   *string `json:"judgeChatBackend"`
@@ -118,8 +141,8 @@ func (s *Server) PutSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.ParseStrategy != nil {
 		ps := strings.ToLower(strings.TrimSpace(*body.ParseStrategy))
-		if ps != "" && ps != "three_step" && ps != "one_shot" {
-			s.err(w, http.StatusBadRequest, "parseStrategy は three_step か one_shot")
+		if ps != "" && ps != "three_step" && ps != "three_step_remote_ocr" && ps != "one_shot" {
+			s.err(w, http.StatusBadRequest, "parseStrategy は three_step（2段階）/ three_step_remote_ocr / one_shot")
 			return
 		}
 	}
@@ -128,8 +151,17 @@ func (s *Server) PutSettings(w http.ResponseWriter, r *http.Request) {
 	if body.OllamaBaseURL != nil {
 		patch.OllamaBaseURL = body.OllamaBaseURL
 	}
+	if body.OllamaModel != nil {
+		patch.OllamaModel = body.OllamaModel
+	}
+	if body.OllamaChatModel != nil {
+		patch.OllamaChatModel = body.OllamaChatModel
+	}
 	if body.ParseStrategy != nil {
 		patch.ParseStrategy = body.ParseStrategy
+	}
+	if body.OcrServerURL != nil {
+		patch.OcrServerURL = body.OcrServerURL
 	}
 
 	legacyOnly := body.ChatBackend != nil &&
@@ -199,3 +231,26 @@ func (s *Server) PutSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// GetOllamaCheck probes Ollama GET /api/tags. Query baseUrl overrides merged settings when non-empty.
+func (s *Server) GetOllamaCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.err(w, http.StatusMethodNotAllowed, "GET のみ")
+		return
+	}
+	base := strings.TrimSpace(r.URL.Query().Get("baseUrl"))
+	if base == "" {
+		db, err := s.Store.GetAppSettings(r.Context())
+		if err != nil {
+			s.err(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		base, _, _ = MergeAppLLM(s.Cfg, db)
+	}
+	models, err := ollama.ListLocalModelNames(r.Context(), base)
+	if err != nil {
+		s.json(w, http.StatusOK, map[string]any{"ok": false, "message": err.Error(), "baseUrl": base})
+		return
+	}
+	s.json(w, http.StatusOK, map[string]any{"ok": true, "models": models, "baseUrl": base})
+}
