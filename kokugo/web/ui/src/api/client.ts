@@ -106,6 +106,10 @@ export function getExercise(id: string) {
   return api<{ exercise: Exercise; questions: Question[] }>(`/api/exercises/${encodeURIComponent(id)}`);
 }
 
+export function deleteExercise(id: string) {
+  return api<{ ok: boolean }>(`/api/exercises/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 export function submitAnswers(id: string, answers: Record<string, string>) {
   return api<SubmitResult>(`/api/exercises/${encodeURIComponent(id)}/submit`, {
     method: "POST",
@@ -117,6 +121,12 @@ export function checkQuestionAnswer(exerciseId: string, questionId: string, answ
   return api<QuestionCheckResult>(
     `/api/exercises/${encodeURIComponent(exerciseId)}/questions/${encodeURIComponent(questionId)}/check`,
     { method: "POST", body: JSON.stringify({ answer }) }
+  );
+}
+
+export function getQuestionSolution(exerciseId: string, questionId: string) {
+  return api<{ correctAnswer: string }>(
+    `/api/exercises/${encodeURIComponent(exerciseId)}/questions/${encodeURIComponent(questionId)}/solution`
   );
 }
 

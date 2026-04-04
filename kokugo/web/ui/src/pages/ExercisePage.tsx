@@ -1,6 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { checkQuestionAnswer, getExercise, submitAnswers, transcribeAudio } from "../api/client";
+import {
+  checkQuestionAnswer,
+  getExercise,
+  getQuestionSolution,
+  submitAnswers,
+  transcribeAudio,
+} from "../api/client";
 import {
   createJaSpeechRecognition,
   shouldUseBrowserSpeechRecognition,
@@ -10,6 +16,8 @@ import ScanImageModal from "../components/ScanImageModal";
 import RubyHtml, { PassageRuby } from "../components/RubyHtml";
 import { furiganaToSpeechText } from "../lib/ruby";
 import type { Question, QuestionCheckResult } from "../types";
+
+const MAX_VOICE_RECORD_MS = 10_000;
 
 export default function ExercisePage() {
   const { id: rawId } = useParams<{ id: string }>();
@@ -26,10 +34,23 @@ export default function ExercisePage() {
   const [deviceRecording, setDeviceRecording] = useState(false);
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [checkBusy, setCheckBusy] = useState(false);
+  const [revealBusy, setRevealBusy] = useState(false);
+  const [revealedSolutions, setRevealedSolutions] = useState<Record<string, string>>({});
   const [checks, setChecks] = useState<Record<string, QuestionCheckResult>>({});
   const [loadErr, setLoadErr] = useState("");
   const [scanPageCount, setScanPageCount] = useState(0);
   const [scanModalIndex, setScanModalIndex] = useState<number | null>(null);
+
+  const isPressingMicRef = useRef(false);
+  const holdRecordingActiveRef = useRef(false);
+  const maxRecordTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearMaxRecordTimer = useCallback(() => {
+    if (maxRecordTimerRef.current !== null) {
+      clearTimeout(maxRecordTimerRef.current);
+      maxRecordTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -40,6 +61,7 @@ export default function ExercisePage() {
         setQuestions(d.questions || []);
         setAnswers({});
         setChecks({});
+        setRevealedSolutions({});
         setQIdx(0);
         const n = d.exercise.imagePaths?.length ?? (d.exercise.imagePath ? 1 : 0);
         setScanPageCount(n);
@@ -48,10 +70,13 @@ export default function ExercisePage() {
   }, [id]);
 
   useEffect(() => {
+    clearMaxRecordTimer();
+    isPressingMicRef.current = false;
+    holdRecordingActiveRef.current = false;
     cancelRecording();
     setDeviceRecording(false);
     setListening(false);
-  }, [qIdx, cancelRecording]);
+  }, [qIdx, cancelRecording, clearMaxRecordTimer]);
 
   const q = questions[qIdx];
 
@@ -101,37 +126,70 @@ export default function ExercisePage() {
   const needsHTTPSForMic =
     typeof window !== "undefined" && !window.isSecureContext && !shouldUseBrowserSpeechRecognition();
 
-  const onMic = async () => {
+  const onMic = () => {
     if (!q || q.type !== "voice") return;
-
     if (shouldUseBrowserSpeechRecognition()) {
       startWebSpeech();
-      return;
     }
+  };
 
-    if (deviceRecording) {
-      setVoiceBusy(true);
-      try {
-        const { blob, mime } = await stopRecording();
-        const { text } = await transcribeAudio(blob, mime);
-        setAnswer(q.id, text.trim());
-      } catch (e) {
-        alert(e instanceof Error ? e.message : "文字おこしに失敗しました");
-      } finally {
-        setVoiceBusy(false);
-        setDeviceRecording(false);
-      }
-      return;
-    }
-
+  const finishHoldRecording = useCallback(async () => {
+    clearMaxRecordTimer();
+    if (!holdRecordingActiveRef.current) return;
+    holdRecordingActiveRef.current = false;
+    const question = q;
+    setVoiceBusy(true);
     try {
-      await startRecording();
-      setDeviceRecording(true);
-    } catch {
-      alert(
-        "マイクをつかえません。https:// または localhost でひらいているか、iPadの「設定」→「プライバシー」でマイクをきょかしてください。"
-      );
+      const { blob, mime } = await stopRecording();
+      if (question?.type === "voice") {
+        const { text } = await transcribeAudio(blob, mime);
+        setAnswer(question.id, text.trim());
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "文字おこしに失敗しました");
+    } finally {
+      setVoiceBusy(false);
+      setDeviceRecording(false);
     }
+  }, [q, stopRecording, setAnswer, clearMaxRecordTimer]);
+
+  const onMicPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!q || q.type !== "voice" || shouldUseBrowserSpeechRecognition()) return;
+    if (voiceBusy || (needsHTTPSForMic && !deviceRecording)) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    isPressingMicRef.current = true;
+    void (async () => {
+      try {
+        await startRecording();
+        if (!isPressingMicRef.current) {
+          cancelRecording();
+          return;
+        }
+        holdRecordingActiveRef.current = true;
+        setDeviceRecording(true);
+        maxRecordTimerRef.current = window.setTimeout(() => {
+          maxRecordTimerRef.current = null;
+          void finishHoldRecording();
+        }, MAX_VOICE_RECORD_MS);
+      } catch {
+        isPressingMicRef.current = false;
+        alert(
+          "マイクをつかえません。https:// または localhost でひらいているか、iPadの「設定」→「プライバシー」でマイクをきょかしてください。"
+        );
+      }
+    })();
+  };
+
+  const onMicPointerEnd = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (shouldUseBrowserSpeechRecognition()) return;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* not captured */
+    }
+    isPressingMicRef.current = false;
+    if (holdRecordingActiveRef.current) void finishHoldRecording();
   };
 
   const needsCheck = (qq: Question) => qq.scorable !== false;
@@ -149,15 +207,36 @@ export default function ExercisePage() {
     }
   };
 
+  const onRevealSolution = async () => {
+    if (!id || !q || !needsCheck(q)) return;
+    setRevealBusy(true);
+    try {
+      const { correctAnswer } = await getQuestionSolution(id, q.id);
+      setRevealedSolutions((r) => ({ ...r, [q.id]: correctAnswer }));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "せいかいをよみこめませんでした");
+    } finally {
+      setRevealBusy(false);
+    }
+  };
+
+  const hideRevealedSolution = () => {
+    if (!q) return;
+    setRevealedSolutions((r) => {
+      const next = { ...r };
+      delete next[q.id];
+      return next;
+    });
+  };
+
   const onSubmit = async () => {
     if (!id) return;
-    const pending = questions.filter((qq) => needsCheck(qq) && !checks[qq.id]);
-    if (pending.length > 0) {
-      alert("まだ「こたえをかくにん」していないもんだいがあります。1もんずつかくにんしてからおくってください。");
-      return;
+    const payload: Record<string, string> = {};
+    for (const qq of questions) {
+      payload[qq.id] = answers[qq.id] ?? "";
     }
     try {
-      const res = await submitAnswers(id, answers);
+      const res = await submitAnswers(id, payload);
       navigate(`/result/${encodeURIComponent(id)}`, { state: { result: res } });
     } catch (e) {
       alert(e instanceof Error ? e.message : "エラー");
@@ -165,9 +244,9 @@ export default function ExercisePage() {
   };
 
   const micActive = listening || deviceRecording || voiceBusy;
+  const showMicHoldAnimation = deviceRecording || listening;
   const check = q ? checks[q.id] : undefined;
   const scorable = q && needsCheck(q);
-  const canGoNext = !q || !scorable || Boolean(check);
 
   if (loadErr) {
     return (
@@ -264,23 +343,50 @@ export default function ExercisePage() {
                       <p className="muted">くわしくは README の「iPadでマイク（HTTPS）」</p>
                     </div>
                   )}
-                  <button
-                    type="button"
-                    className={"mic-btn" + (micActive ? " listening" : "")}
-                    aria-label="マイク"
-                    disabled={voiceBusy || (needsHTTPSForMic && !deviceRecording)}
-                    onClick={() => void onMic()}
+                  <div
+                    className={
+                      "mic-btn-wrap" + (showMicHoldAnimation ? " mic-btn-wrap--recording" : "")
+                    }
                   >
-                    🎤
-                  </button>
+                    {showMicHoldAnimation && (
+                      <div className="mic-orbit-layer" aria-hidden>
+                        <span className="mic-orbit-ring" />
+                        <span className="mic-orbit-arm">
+                          <span className="mic-orbit-dot" />
+                        </span>
+                        <span className="mic-orbit-arm mic-orbit-arm--lag">
+                          <span className="mic-orbit-dot mic-orbit-dot--secondary" />
+                        </span>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className={"mic-btn" + (micActive ? " listening" : "")}
+                      aria-label={
+                        shouldUseBrowserSpeechRecognition()
+                          ? "マイク"
+                          : deviceRecording
+                            ? "録音ちゅう（はなすとおわる）"
+                            : "マイクをおさえて録音"
+                      }
+                      disabled={voiceBusy || (needsHTTPSForMic && !deviceRecording)}
+                      onClick={shouldUseBrowserSpeechRecognition() ? () => onMic() : undefined}
+                      onPointerDown={shouldUseBrowserSpeechRecognition() ? undefined : onMicPointerDown}
+                      onPointerUp={shouldUseBrowserSpeechRecognition() ? undefined : onMicPointerEnd}
+                      onPointerCancel={shouldUseBrowserSpeechRecognition() ? undefined : onMicPointerEnd}
+                      onContextMenu={shouldUseBrowserSpeechRecognition() ? undefined : (ev) => ev.preventDefault()}
+                    >
+                      🎤
+                    </button>
+                  </div>
                   <p className="muted">
                     {shouldUseBrowserSpeechRecognition()
                       ? "マイクをおす（ブラウザの音声入力）"
                       : deviceRecording
-                        ? "もういちどおすとおわって、サーバーが文字におこします"
+                        ? "指をはなすとおわります（さいちょう 10 びょう）"
                         : voiceBusy
                           ? "文字おこしちゅう…"
-                          : "マイクをおすと録音はじまります（もういちどおすとおわり）"}
+                          : "マイクをおさえっぱなしで録音、はなすとおわり（さいちょう 10 びょう）"}
                   </p>
                   {!shouldUseBrowserSpeechRecognition() && (
                     <p className="muted voice-hint-ios">
@@ -304,6 +410,32 @@ export default function ExercisePage() {
                     {checkBusy ? "かくにんちゅう…" : "こたえをかくにん"}
                   </button>
                   {!check && <span className="muted">せいかいかどうと、コメントがでます</span>}
+                </div>
+              )}
+              {scorable && (
+                <div className="q-reveal-block">
+                  {revealedSolutions[q.id] === undefined ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-lg q-reveal-btn"
+                      disabled={revealBusy}
+                      onClick={() => void onRevealSolution()}
+                    >
+                      {revealBusy ? "よみこみちゅう…" : "せいかいをみる"}
+                    </button>
+                  ) : (
+                    <div className="q-reveal-panel" role="region" aria-label="せいかいの例">
+                      <div className="q-reveal-head">
+                        <span className="q-reveal-label">せいかいの例</span>
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={hideRevealedSolution}>
+                          かくす
+                        </button>
+                      </div>
+                      <div className="q-reveal-body">
+                        <RubyHtml html={revealedSolutions[q.id]} />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
               {!scorable && <p className="muted q-scorable-skip">じどうさいてんのたいしょうがいです。つぎへすすんでOKです。</p>}
@@ -333,7 +465,7 @@ export default function ExercisePage() {
                 <button
                   type="button"
                   className="btn btn-primary btn-lg"
-                  disabled={qIdx >= questions.length - 1 || !canGoNext}
+                  disabled={qIdx >= questions.length - 1}
                   onClick={() => setQIdx((i) => i + 1)}
                 >
                   つぎ

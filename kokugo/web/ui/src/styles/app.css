@@ -599,6 +599,39 @@ rt {
   align-items: center;
   margin-bottom: 0.5rem;
 }
+.q-reveal-block {
+  margin: 0.35rem 0 0.85rem;
+}
+.q-reveal-btn {
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+}
+.q-reveal-panel {
+  text-align: left;
+  border-radius: 14px;
+  border: 2px dashed color-mix(in srgb, var(--blue-500) 45%, var(--blue-200));
+  background: var(--blue-100);
+  padding: 0.65rem 0.85rem 0.85rem;
+}
+.q-reveal-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+.q-reveal-label {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--blue-700);
+}
+.q-reveal-body {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.55;
+  color: var(--blue-900);
+}
 .q-scorable-skip {
   margin-bottom: 0.75rem;
 }
@@ -626,7 +659,76 @@ rt {
   text-align: center;
   padding: 1rem 0;
 }
+.mic-btn-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 156px;
+  height: 156px;
+  margin: 0 auto;
+  vertical-align: middle;
+}
+.mic-orbit-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.mic-orbit-ring {
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--blue-500) 38%, transparent);
+  animation: mic-orbit-ring-pulse 1.4s ease-in-out infinite;
+}
+.mic-orbit-arm {
+  position: absolute;
+  inset: 0;
+  animation: mic-orbit-spin 2.1s linear infinite;
+}
+.mic-orbit-arm--lag {
+  animation-duration: 2.9s;
+  animation-delay: -1s;
+  opacity: 0.75;
+}
+.mic-orbit-dot {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  width: 13px;
+  height: 13px;
+  margin-left: -6.5px;
+  border-radius: 50%;
+  background: var(--orange);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--orange) 70%, transparent);
+}
+.mic-orbit-dot--secondary {
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  top: 12px;
+  background: var(--blue-200);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--blue-500) 65%, transparent);
+}
+@keyframes mic-orbit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes mic-orbit-ring-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.95;
+  }
+}
 .mic-btn {
+  position: relative;
+  z-index: 1;
   width: 120px;
   height: 120px;
   border-radius: 50%;
@@ -636,12 +738,19 @@ rt {
   font-size: 3rem;
   cursor: pointer;
   box-shadow: 0 6px 0 var(--blue-900);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .mic-btn:active {
   transform: translateY(3px);
 }
 .mic-btn.listening {
   animation: pulse 1s infinite;
+}
+.mic-btn-wrap--recording .mic-btn.listening {
+  animation: none;
+  box-shadow: 0 6px 0 var(--blue-900), 0 0 0 5px color-mix(in srgb, var(--orange) 28%, transparent);
 }
 @keyframes pulse {
   50% {
@@ -770,12 +879,56 @@ rt {
   margin: 0;
 }
 .history-list li {
-  padding: 1rem;
+  padding: 0;
   border-radius: 14px;
   background: var(--blue-100);
   margin-bottom: 0.5rem;
   font-weight: 700;
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+  overflow: hidden;
+}
+.history-row-main {
+  flex: 1;
+  min-height: var(--tap-min);
+  padding: 1rem;
+  margin: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  color: inherit;
+  text-align: left;
   cursor: pointer;
+  border-radius: 14px;
+}
+.history-row-main:focus-visible {
+  outline: 2px solid var(--blue-500);
+  outline-offset: 2px;
+}
+.history-row-delete {
+  flex-shrink: 0;
+  min-width: var(--tap-min);
+  margin: 0.35rem 0.35rem 0.35rem 0;
+  padding: 0 0.85rem;
+  border: none;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--orange);
+  font: inherit;
+  font-weight: 800;
+  font-size: 0.95rem;
+  cursor: pointer;
+  box-shadow: 0 1px 0 rgba(10, 61, 110, 0.08);
+}
+.history-row-delete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.history-row-delete:focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: 2px;
 }
 .flashcard {
   max-width: 520px;

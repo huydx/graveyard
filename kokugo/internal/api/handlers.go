@@ -388,6 +388,31 @@ func (s *Server) DeleteExercisePage(w http.ResponseWriter, r *http.Request) {
 	s.json(w, http.StatusOK, map[string]any{"ok": true, "imagePaths": res.ImagePaths})
 }
 
+func (s *Server) DeleteExercise(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		s.err(w, http.StatusMethodNotAllowed, "DELETE のみ")
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		s.err(w, http.StatusBadRequest, "演習IDが不正です")
+		return
+	}
+	paths, err := s.Store.DeleteExercise(r.Context(), id)
+	if errors.Is(err, sql.ErrNoRows) {
+		s.err(w, http.StatusNotFound, "見つかりません")
+		return
+	}
+	if err != nil {
+		s.err(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	for _, p := range paths {
+		_ = os.Remove(p)
+	}
+	s.json(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 func (s *Server) GetExercise(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -546,6 +571,41 @@ func (s *Server) CheckQuestion(w http.ResponseWriter, r *http.Request) {
 		"isCorrect":  j.IsCorrect,
 		"feedback":   j.Feedback,
 	})
+}
+
+// GetQuestionSolution returns the model answer for study (not included in GET exercise).
+func (s *Server) GetQuestionSolution(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.err(w, http.StatusMethodNotAllowed, "GET のみ")
+		return
+	}
+	eid := r.PathValue("id")
+	qid := r.PathValue("questionId")
+	if eid == "" || qid == "" {
+		s.err(w, http.StatusBadRequest, "IDが不正です")
+		return
+	}
+	_, qs, err := s.Store.GetExercise(r.Context(), eid)
+	if err != nil {
+		s.err(w, http.StatusNotFound, "見つかりません")
+		return
+	}
+	var q *store.Question
+	for i := range qs {
+		if qs[i].ID == qid {
+			q = &qs[i]
+			break
+		}
+	}
+	if q == nil {
+		s.err(w, http.StatusNotFound, "もんだいが見つかりません")
+		return
+	}
+	if strings.TrimSpace(q.CorrectAnswer) == "" {
+		s.err(w, http.StatusBadRequest, "このもんだいはせいかいがきろくされていません")
+		return
+	}
+	s.json(w, http.StatusOK, map[string]any{"correctAnswer": q.CorrectAnswer})
 }
 
 func norm(s string) string {
@@ -824,9 +884,11 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/exercises/{id}/parse", s.ParseExercise)
 	mux.HandleFunc("GET /api/exercises/{id}/image/{pageIndex}", s.ExerciseImagePage)
 	mux.HandleFunc("GET /api/exercises/{id}/image", s.ExerciseImage)
+	mux.HandleFunc("DELETE /api/exercises/{id}", s.DeleteExercise)
 	mux.HandleFunc("GET /api/exercises/{id}", s.GetExercise)
 	mux.HandleFunc("POST /api/exercises/{id}/submit", s.SubmitAnswers)
 	mux.HandleFunc("POST /api/exercises/{id}/questions/{questionId}/check", s.CheckQuestion)
+	mux.HandleFunc("GET /api/exercises/{id}/questions/{questionId}/solution", s.GetQuestionSolution)
 	mux.HandleFunc("POST /api/exercises/{id}/summary", s.GenerateSummary)
 	mux.HandleFunc("GET /api/exercises/{id}/summary", s.GetSummary)
 	mux.HandleFunc("GET /api/history", s.History)

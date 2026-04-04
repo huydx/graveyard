@@ -488,6 +488,22 @@ func (s *Store) ListExercises(ctx context.Context, limit int) ([]Exercise, error
 	return out, nil
 }
 
+// DeleteExercise removes the exercise and related rows (CASCADE). Returns local image paths to unlink.
+func (s *Store) DeleteExercise(ctx context.Context, id string) ([]string, error) {
+	ex, _, err := s.GetExercise(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	paths := ex.ImagePaths
+	if len(paths) == 0 && ex.ImagePath != "" {
+		paths = []string{ex.ImagePath}
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM exercises WHERE id = ?`, id); err != nil {
+		return nil, err
+	}
+	return paths, nil
+}
+
 // --- Summary & vocab ---
 
 func (s *Store) SaveSummary(ctx context.Context, exerciseID, summaryJSON string) error {
