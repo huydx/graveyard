@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   checkQuestionAnswer,
   getExercise,
@@ -15,7 +15,7 @@ import { useMediaRecorderAnswer } from "../hooks/useMediaRecorderAnswer";
 import ScanImageModal from "../components/ScanImageModal";
 import RubyHtml, { PassageRuby } from "../components/RubyHtml";
 import { furiganaToSpeechText } from "../lib/ruby";
-import type { Question, QuestionCheckResult } from "../types";
+import type { AssignmentExerciseRef, Question, QuestionCheckResult } from "../types";
 
 const MAX_VOICE_RECORD_MS = 10_000;
 
@@ -40,6 +40,8 @@ export default function ExercisePage() {
   const [loadErr, setLoadErr] = useState("");
   const [scanPageCount, setScanPageCount] = useState(0);
   const [scanModalIndex, setScanModalIndex] = useState<number | null>(null);
+  const [assignmentSiblings, setAssignmentSiblings] = useState<AssignmentExerciseRef[]>([]);
+  const [printAssignmentId, setPrintAssignmentId] = useState("");
 
   const isPressingMicRef = useRef(false);
   const holdRecordingActiveRef = useRef(false);
@@ -65,6 +67,9 @@ export default function ExercisePage() {
         setQIdx(0);
         const n = d.exercise.imagePaths?.length ?? (d.exercise.imagePath ? 1 : 0);
         setScanPageCount(n);
+        const sibs = d.assignment?.exercises;
+        setAssignmentSiblings(sibs && sibs.length > 1 ? sibs : []);
+        setPrintAssignmentId(d.exercise.assignmentId?.trim() ? d.exercise.assignmentId : "");
       })
       .catch((e) => setLoadErr(e instanceof Error ? e.message : "エラー"));
   }, [id]);
@@ -258,6 +263,32 @@ export default function ExercisePage() {
 
   return (
     <section className="view">
+      {printAssignmentId ? (
+        <nav className="print-breadcrumb muted">
+          <Link to={`/prints/${encodeURIComponent(printAssignmentId)}`}>← このプリントにもどる</Link>
+        </nav>
+      ) : null}
+      {assignmentSiblings.length > 0 && (
+        <div className="card assignment-sibling-bar" aria-label="このプリントのほかのだい">
+          <p className="muted assignment-sibling-label">このプリントのだいをきりかえ</p>
+          <div className="assignment-sibling-chips">
+            {assignmentSiblings.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className={
+                  "btn btn-secondary assignment-sibling-chip" + (s.id === id ? " is-current" : "")
+                }
+                disabled={s.id === id}
+                onClick={() => navigate(`/exercise/${encodeURIComponent(s.id)}`)}
+              >
+                {s.assignmentSort + 1}
+                {s.status === "completed" ? " ✓" : ""}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="exercise-layout">
         <article className="card passage-panel">
           <div className="passage-head">

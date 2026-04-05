@@ -40,27 +40,22 @@ func TranscribeAnswerAudio(ctx context.Context, c ChatCompleter, model string, a
 	return FirstAssistantContent(resp)
 }
 
-// SummarizeLearning builds a post-exercise summary via JSON chat completion.
-func SummarizeLearning(ctx context.Context, c ChatCompleter, model string, title, passage, questionsJSON string, scorePercent int) (*LearningSummary, error) {
+// SummarizePrint builds a whole-print summary via JSON chat completion.
+func SummarizePrint(ctx context.Context, c ChatCompleter, model string, printPayloadJSON string) (*PrintLearningSummary, error) {
 	if c == nil {
 		return nil, fmt.Errorf("chat: nil completer")
 	}
-	user := fmt.Sprintf(SummaryUserTemplate,
-		strings.TrimSpace(title),
-		strings.TrimSpace(passage),
-		strings.TrimSpace(questionsJSON),
-		scorePercent,
-	)
+	user := fmt.Sprintf(PrintSummaryUserTemplate, strings.TrimSpace(printPayloadJSON))
 	req := ChatCompletionRequest{
 		Model:       model,
-		Temperature: 0.4,
+		Temperature: 0.35,
 		MaxTokens:   8192,
 		Messages: []ChatMessage{
-			TextMessage("system", SummarySystemJP),
+			TextMessage("system", PrintSummarySystemJP),
 			TextMessage("user", user),
 		},
 		ResponseFormat:   &ChatResponseFormat{Type: "json_object"},
-		GeminiStructured: ChatGeminiStructuredLearningSummary,
+		GeminiStructured: ChatGeminiStructuredPrintLearningSummary,
 	}
 	resp, err := c.CreateChatCompletion(ctx, req)
 	if err != nil {
@@ -70,10 +65,11 @@ func SummarizeLearning(ctx context.Context, c ChatCompleter, model string, title
 	if err != nil {
 		return nil, err
 	}
-	var out LearningSummary
+	var out PrintLearningSummary
 	if err := json.Unmarshal([]byte(text), &out); err != nil {
-		return nil, fmt.Errorf("summary JSON: %w", err)
+		return nil, fmt.Errorf("print summary JSON: %w", err)
 	}
+	NormalizePrintLearningSummary(&out)
 	return &out, nil
 }
 

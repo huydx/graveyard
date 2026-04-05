@@ -1,9 +1,11 @@
 import type {
   AppSettingsResponse,
+  AssignmentExerciseRef,
+  AssignmentGroup,
   Exercise,
   HealthResponse,
-  LearningSummary,
   OllamaCheckResponse,
+  PrintLearningSummary,
   Question,
   QuestionCheckResult,
   SubmitResult,
@@ -45,14 +47,10 @@ export function getAppSettings() {
 
 export type PutAppSettingsBody = {
   ollamaBaseUrl?: string;
-  ollamaModel?: string;
   ollamaChatModel?: string;
-  parseStrategy?: string;
-  ocrServerUrl?: string;
   summaryChatBackend?: string;
   judgeChatBackend?: string;
-  rubyBackend?: string;
-  /** @deprecated まとめて3ロールに同じ値を書くときだけ */
+  /** @deprecated まとめと採点に同じ値を書くときだけ */
   chatBackend?: string;
   googleApiKey?: string;
   clearGoogleApiKey?: boolean;
@@ -73,6 +71,36 @@ export function getOllamaCheck(baseUrl?: string) {
   return api<OllamaCheckResponse>(`/api/settings/ollama-check${q}`);
 }
 
+/** Create an empty print (assignment + draft). Server requires a non-empty title in the body. */
+export function createPrint(body: { title: string }) {
+  return api<{ exerciseId: string; assignmentId: string }>("/api/prints", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getPrint(assignmentId: string) {
+  return api<{ print: AssignmentGroup; primaryExerciseId: string }>(
+    `/api/prints/${encodeURIComponent(assignmentId)}`
+  );
+}
+
+export function patchPrintTitle(assignmentId: string, title: string) {
+  return api<{ ok: boolean; title: string }>(`/api/prints/${encodeURIComponent(assignmentId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
+  });
+}
+
+/** Reuse last draft row or append a new draft; use returned id for addExercisePage on this print. */
+export function ensureScanDraft(assignmentId: string) {
+  return api<{ exerciseId: string }>(
+    `/api/prints/${encodeURIComponent(assignmentId)}/ensure-scan-draft`,
+    { method: "POST" }
+  );
+}
+
+/** Legacy: first image creates a new draft in one step. Prefer createPrint + addExercisePage. */
 export function uploadScan(file: File) {
   const fd = new FormData();
   fd.append("image", file);
@@ -99,11 +127,22 @@ export function deleteExercisePage(exerciseId: string, pageIndex: number) {
 }
 
 export function parseExercise(id: string) {
-  return api(`/api/exercises/${encodeURIComponent(id)}/parse`, { method: "POST" });
+  return api<{
+    ok: boolean;
+    exerciseCount?: number;
+    exerciseIds?: string[];
+    primaryExerciseId?: string;
+    questionCount?: number;
+    title?: string;
+  }>(`/api/exercises/${encodeURIComponent(id)}/parse`, { method: "POST" });
 }
 
 export function getExercise(id: string) {
-  return api<{ exercise: Exercise; questions: Question[] }>(`/api/exercises/${encodeURIComponent(id)}`);
+  return api<{
+    exercise: Exercise;
+    questions: Question[];
+    assignment?: { id: string; exercises: AssignmentExerciseRef[] };
+  }>(`/api/exercises/${encodeURIComponent(id)}`);
 }
 
 export function deleteExercise(id: string) {
@@ -130,18 +169,20 @@ export function getQuestionSolution(exerciseId: string, questionId: string) {
   );
 }
 
-export function generateSummary(id: string) {
-  return api<{ summary: LearningSummary }>(`/api/exercises/${encodeURIComponent(id)}/summary`, {
-    method: "POST",
-  });
+export function generatePrintSummary(assignmentId: string) {
+  return api<{ summary: PrintLearningSummary }>(
+    `/api/prints/${encodeURIComponent(assignmentId)}/summary`,
+    { method: "POST" }
+  );
 }
 
-export function getSummary(id: string) {
-  return api<LearningSummary>(`/api/exercises/${encodeURIComponent(id)}/summary`);
+/** GET returns the summary object directly (not wrapped). */
+export function getPrintSummary(assignmentId: string) {
+  return api<PrintLearningSummary>(`/api/prints/${encodeURIComponent(assignmentId)}/summary`);
 }
 
 export function listHistory() {
-  return api<{ exercises: Exercise[] }>("/api/history");
+  return api<{ assignments: AssignmentGroup[] }>("/api/history");
 }
 
 export function monthlyReminders() {

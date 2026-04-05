@@ -1,30 +1,21 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { getHealth } from "../api/client";
-import { useDraftExercise } from "../context/DraftExerciseContext";
-
-const routeTitles: { prefix: string; title: string }[] = [
-  { prefix: "/exercise/", title: "れんしゅう" },
-  { prefix: "/result/", title: "けっか" },
-  { prefix: "/scan", title: "スキャン" },
-  { prefix: "/history", title: "きろく" },
-  { prefix: "/remind", title: "まいつきおさらい" },
-  { prefix: "/settings", title: "せってい" },
-  { prefix: "/", title: "ホーム" },
-];
 
 function titleForPath(pathname: string): string {
-  for (const { prefix, title } of routeTitles) {
-    if (prefix === "/" && pathname === "/") return title;
-    if (prefix !== "/" && pathname.startsWith(prefix)) return title;
-  }
+  if (pathname === "/prints/new") return "あたらしいプリント";
+  if (/\/prints\/[^/]+\/scan/.test(pathname)) return "スキャン";
+  if (pathname.startsWith("/prints/") && pathname !== "/prints") return "プリント";
+  if (pathname.startsWith("/exercise/")) return "れんしゅう";
+  if (pathname.startsWith("/result/")) return "けっか";
+  if (pathname.startsWith("/remind")) return "まいつきおさらい";
+  if (pathname.startsWith("/settings")) return "せってい";
+  if (pathname === "/prints") return "プリント";
   return "こくごアトリエ";
 }
 
 export default function Layout() {
   const location = useLocation();
-  const navigate = useNavigate();
-  const { draftExerciseId, beginNewScan } = useDraftExercise();
   const [badge, setBadge] = useState("AI: せつぞくまち");
   const [geminiOk, setGeminiOk] = useState(false);
   const [childName, setChildName] = useState("がくせい");
@@ -47,10 +38,6 @@ export default function Layout() {
       });
   }, [location.pathname]);
 
-  const startLesson = () => {
-    navigate(draftExerciseId ? `/exercise/${encodeURIComponent(draftExerciseId)}` : "/scan");
-  };
-
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -64,30 +51,19 @@ export default function Layout() {
             <small>がんばっているよ</small>
           </div>
         </div>
-        <nav className="nav">
-          <NavLink to="/" end className={({ isActive }) => "nav-btn" + (isActive ? " active" : "")}>
-            ホーム
-          </NavLink>
-          <NavLink
-            to="/scan"
-            className={({ isActive }) => "nav-btn" + (isActive ? " active" : "")}
-            onClick={beginNewScan}
-          >
-            スキャン
-          </NavLink>
-          <NavLink to="/history" className={({ isActive }) => "nav-btn" + (isActive ? " active" : "")}>
-            きろく
-          </NavLink>
-          <NavLink to="/remind" className={({ isActive }) => "nav-btn" + (isActive ? " active" : "")}>
-            まいつきおさらい
-          </NavLink>
-          <NavLink to="/settings" className={({ isActive }) => "nav-btn" + (isActive ? " active" : "")}>
-            せってい
+        <nav className="nav nav-prints-only">
+          <NavLink to="/prints" className={({ isActive }) => "nav-btn nav-btn-main" + (isActive ? " active" : "")}>
+            プリント
           </NavLink>
         </nav>
-        <button type="button" className="btn btn-primary btn-block sidebar-cta" onClick={startLesson}>
-          れんしゅうをはじめる
-        </button>
+        <div className="sidebar-secondary">
+          <Link to="/remind" className="sidebar-secondary-link">
+            まいつきおさらい
+          </Link>
+          <Link to="/settings" className="sidebar-secondary-link">
+            せってい
+          </Link>
+        </div>
       </aside>
       <main className="main">
         <header className="topbar">

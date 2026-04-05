@@ -41,7 +41,9 @@ export default function RemindPage() {
     return (
       <section className="view">
         <div className="card">
-          <p className="muted">おさらいのカードがまだありません。れんしゅうのあと「まとめ」でつくられます。</p>
+          <p className="muted">
+            おさらいのカードがまだありません。プリントの「AIでまとめ」でことばカードがつくられます（れんしゅうのあとでもOK）。
+          </p>
         </div>
       </section>
     );

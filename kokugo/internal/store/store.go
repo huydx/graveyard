@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/huydx/kokugo/internal/textnorm"
 	_ "modernc.org/sqlite"
 )
 
@@ -153,22 +154,101 @@ func (s *Store) migrate() error {
 			return fmt.Errorf("migrate app_settings ocr_server_url: %w", err)
 		}
 	}
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS assignments (
+			id TEXT PRIMARY KEY,
+			created_at TEXT NOT NULL
+		);`); err != nil {
+		return fmt.Errorf("migrate assignments table: %w", err)
+	}
+	if _, err := s.db.Exec(`ALTER TABLE exercises ADD COLUMN assignment_id TEXT REFERENCES assignments(id) ON DELETE CASCADE`); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+			return fmt.Errorf("migrate exercises assignment_id: %w", err)
+		}
+	}
+	if _, err := s.db.Exec(`ALTER TABLE exercises ADD COLUMN assignment_sort INTEGER NOT NULL DEFAULT 0`); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+			return fmt.Errorf("migrate exercises assignment_sort: %w", err)
+		}
+	}
+	if err := s.backfillAssignments(); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS print_summaries (
+			assignment_id TEXT PRIMARY KEY REFERENCES assignments(id) ON DELETE CASCADE,
+			summary_json TEXT NOT NULL,
+			created_at TEXT NOT NULL
+		);`); err != nil {
+		return fmt.Errorf("migrate print_summaries: %w", err)
+	}
+	if _, err := s.db.Exec(`ALTER TABLE assignments ADD COLUMN title TEXT NOT NULL DEFAULT ''`); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+			return fmt.Errorf("migrate assignments title: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *Store) backfillAssignments() error {
+	ctx := context.Background()
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, created_at FROM exercises
+		WHERE assignment_id IS NULL OR trim(ifnull(assignment_id, '')) = ''`)
+	if err != nil {
+		return fmt.Errorf("backfill assignments: %w", err)
+	}
+	defer rows.Close()
+	type pair struct {
+		id, created string
+	}
+	var list []pair
+	for rows.Next() {
+		var p pair
+		if err := rows.Scan(&p.id, &p.created); err != nil {
+			return err
+		}
+		list = append(list, p)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, p := range list {
+		aid := uuid.NewString()
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO assignments (id, created_at) VALUES (?, ?)`, aid, p.created); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE exercises SET assignment_id = ?, assignment_sort = 0 WHERE id = ?`, aid, p.id); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 // --- Exercises ---
 
 type Exercise struct {
-	ID           string     `json:"id"`
-	Title        string     `json:"title"`
-	Passage      string     `json:"passage"`
-	ImagePath    string     `json:"imagePath"`
-	ImagePaths   []string   `json:"imagePaths,omitempty"`
-	Status       string     `json:"status"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	CompletedAt  *time.Time `json:"completedAt,omitempty"`
-	AnswersJSON  string     `json:"answersJson,omitempty"`
-	ScorePercent int        `json:"scorePercent"`
+	ID             string     `json:"id"`
+	Title          string     `json:"title"`
+	Passage        string     `json:"passage"`
+	ImagePath      string     `json:"imagePath"`
+	ImagePaths     []string   `json:"imagePaths,omitempty"`
+	Status         string     `json:"status"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	CompletedAt    *time.Time `json:"completedAt,omitempty"`
+	AnswersJSON    string     `json:"answersJson,omitempty"`
+	ScorePercent   int        `json:"scorePercent"`
+	AssignmentID   string     `json:"assignmentId,omitempty"`
+	AssignmentSort int        `json:"assignmentSort"`
 }
 
 type Question struct {
@@ -191,9 +271,14 @@ func (s *Store) CreateExerciseDraft(ctx context.Context, imagePath string) (*Exe
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	aid := uuid.NewString()
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO exercises (id, title, passage, image_path, status, created_at)
-		VALUES (?, '', '', ?, 'draft', ?)`, id, imagePath, ts); err != nil {
+		INSERT INTO assignments (id, created_at) VALUES (?, ?)`, aid, ts); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO exercises (id, title, passage, image_path, status, created_at, assignment_id, assignment_sort)
+		VALUES (?, '', '', ?, 'draft', ?, ?, 0)`, id, imagePath, ts, aid); err != nil {
 		return nil, err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -205,7 +290,65 @@ func (s *Store) CreateExerciseDraft(ctx context.Context, imagePath string) (*Exe
 	}
 	return &Exercise{
 		ID: id, ImagePath: imagePath, ImagePaths: []string{imagePath}, Status: "draft", CreatedAt: now,
+		AssignmentID: aid, AssignmentSort: 0,
 	}, nil
+}
+
+// CreateEmptyPrintDraft creates an assignment and a primary draft exercise with no pages yet (画像はあとから追加).
+func (s *Store) CreateEmptyPrintDraft(ctx context.Context) (*Exercise, error) {
+	id := uuid.NewString()
+	now := time.Now().UTC()
+	ts := now.Format(time.RFC3339)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	aid := uuid.NewString()
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO assignments (id, created_at) VALUES (?, ?)`, aid, ts); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO exercises (id, title, passage, image_path, status, created_at, assignment_id, assignment_sort)
+		VALUES (?, '', '', '', 'draft', ?, ?, 0)`, id, ts, aid); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return &Exercise{
+		ID: id, ImagePath: "", ImagePaths: nil, Status: "draft", CreatedAt: now,
+		AssignmentID: aid, AssignmentSort: 0,
+	}, nil
+}
+
+// AppendDraftExerciseToAssignment adds an empty draft row at the end of a print (assignment).
+func (s *Store) AppendDraftExerciseToAssignment(ctx context.Context, assignmentID string) (*Exercise, error) {
+	var maxSort sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT MAX(assignment_sort) FROM exercises WHERE assignment_id = ?`, assignmentID).Scan(&maxSort)
+	if err != nil {
+		return nil, err
+	}
+	nextSort := 0
+	if maxSort.Valid {
+		nextSort = int(maxSort.Int64) + 1
+	}
+	id := uuid.NewString()
+	now := time.Now().UTC()
+	ts := now.Format(time.RFC3339)
+	if _, err := s.db.ExecContext(ctx, `
+		INSERT INTO exercises (id, title, passage, image_path, status, created_at, assignment_id, assignment_sort, answers_json, score_percent)
+		VALUES (?, '', '', '', 'draft', ?, ?, ?, '{}', 0)`,
+		id, ts, assignmentID, nextSort); err != nil {
+		return nil, err
+	}
+	ex, _, err := s.GetExercise(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return ex, nil
 }
 
 var (
@@ -314,6 +457,13 @@ func (s *Store) AddExercisePage(ctx context.Context, exerciseID, imagePath strin
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO exercise_pages (exercise_id, sort_order, image_path) VALUES (?, ?, ?)`,
 		exerciseID, next, imagePath)
+	if err != nil {
+		return err
+	}
+	if next == 0 {
+		_, err = s.db.ExecContext(ctx, `
+			UPDATE exercises SET image_path = ? WHERE id = ?`, imagePath, exerciseID)
+	}
 	return err
 }
 
@@ -392,10 +542,16 @@ func (s *Store) ReplaceQuestions(ctx context.Context, exerciseID string, qs []Qu
 func (s *Store) GetExercise(ctx context.Context, id string) (*Exercise, []Question, error) {
 	var ex Exercise
 	var created, completed sql.NullString
+	var assignID sql.NullString
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, title, passage, image_path, status, created_at, completed_at, answers_json, score_percent
+		SELECT id, title, passage, image_path, status, created_at, completed_at, answers_json, score_percent,
+		       assignment_id, assignment_sort
 		FROM exercises WHERE id = ?`, id).Scan(
-		&ex.ID, &ex.Title, &ex.Passage, &ex.ImagePath, &ex.Status, &created, &completed, &ex.AnswersJSON, &ex.ScorePercent)
+		&ex.ID, &ex.Title, &ex.Passage, &ex.ImagePath, &ex.Status, &created, &completed, &ex.AnswersJSON, &ex.ScorePercent,
+		&assignID, &ex.AssignmentSort)
+	if assignID.Valid {
+		ex.AssignmentID = assignID.String
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, sql.ErrNoRows
 	}
@@ -457,7 +613,8 @@ func (s *Store) ListExercises(ctx context.Context, limit int) ([]Exercise, error
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, title, passage, image_path, status, created_at, completed_at, score_percent
+		SELECT id, title, passage, image_path, status, created_at, completed_at, score_percent,
+		       assignment_id, assignment_sort
 		FROM exercises ORDER BY created_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -467,8 +624,13 @@ func (s *Store) ListExercises(ctx context.Context, limit int) ([]Exercise, error
 	for rows.Next() {
 		var ex Exercise
 		var created, completed sql.NullString
-		if err := rows.Scan(&ex.ID, &ex.Title, &ex.Passage, &ex.ImagePath, &ex.Status, &created, &completed, &ex.ScorePercent); err != nil {
+		var assignID sql.NullString
+		if err := rows.Scan(&ex.ID, &ex.Title, &ex.Passage, &ex.ImagePath, &ex.Status, &created, &completed, &ex.ScorePercent,
+			&assignID, &ex.AssignmentSort); err != nil {
 			return nil, err
+		}
+		if assignID.Valid {
+			ex.AssignmentID = assignID.String
 		}
 		ex.CreatedAt, _ = time.Parse(time.RFC3339, created.String)
 		if completed.Valid && completed.String != "" {
@@ -488,20 +650,10 @@ func (s *Store) ListExercises(ctx context.Context, limit int) ([]Exercise, error
 	return out, nil
 }
 
-// DeleteExercise removes the exercise and related rows (CASCADE). Returns local image paths to unlink.
+// DeleteExercise removes the exercise (or the whole assignment when deleting the primary exercise at assignmentSort 0).
+// Returns image paths that are no longer referenced and may be unlinked on disk.
 func (s *Store) DeleteExercise(ctx context.Context, id string) ([]string, error) {
-	ex, _, err := s.GetExercise(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	paths := ex.ImagePaths
-	if len(paths) == 0 && ex.ImagePath != "" {
-		paths = []string{ex.ImagePath}
-	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM exercises WHERE id = ?`, id); err != nil {
-		return nil, err
-	}
-	return paths, nil
+	return s.deleteExerciseOrAssignment(ctx, id)
 }
 
 // --- Summary & vocab ---
@@ -519,6 +671,27 @@ func (s *Store) SaveSummary(ctx context.Context, exerciseID, summaryJSON string)
 func (s *Store) GetSummary(ctx context.Context, exerciseID string) (string, error) {
 	var j string
 	err := s.db.QueryRowContext(ctx, `SELECT summary_json FROM exercise_summaries WHERE exercise_id = ?`, exerciseID).Scan(&j)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return j, err
+}
+
+// SavePrintSummary upserts the AI summary for one assignment (print).
+func (s *Store) SavePrintSummary(ctx context.Context, assignmentID, summaryJSON string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO print_summaries (assignment_id, summary_json, created_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(assignment_id) DO UPDATE SET summary_json = excluded.summary_json, created_at = excluded.created_at`,
+		assignmentID, summaryJSON, now)
+	return err
+}
+
+// GetPrintSummary returns JSON for a print-level summary, or empty string if none.
+func (s *Store) GetPrintSummary(ctx context.Context, assignmentID string) (string, error) {
+	var j string
+	err := s.db.QueryRowContext(ctx, `SELECT summary_json FROM print_summaries WHERE assignment_id = ?`, assignmentID).Scan(&j)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -568,6 +741,38 @@ func (s *Store) InsertVocabCards(ctx context.Context, exerciseID string, items [
 	return tx.Commit()
 }
 
+// ReplaceVocabCardsForAssignment deletes vocab rows for every exercise in the assignment, then inserts items
+// under anchorExerciseID (typically だい1). Used when a print-level summary replaces per-exercise vocabulary.
+func (s *Store) ReplaceVocabCardsForAssignment(ctx context.Context, assignmentID, anchorExerciseID string, items []VocabItem) error {
+	if strings.TrimSpace(anchorExerciseID) == "" {
+		return errors.New("anchor exercise id required")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM vocab_cards WHERE source_exercise_id IN (
+			SELECT id FROM exercises WHERE assignment_id = ?
+		)`, assignmentID); err != nil {
+		return err
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, it := range items {
+		ex, _ := json.Marshal(it.Examples)
+		id := uuid.NewString()
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO vocab_cards (id, word, reading, meaning, examples_json, source_exercise_id, created_at, review_count)
+			VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+			id, it.Word, it.Reading, it.Meaning, string(ex), anchorExerciseID, now)
+		if err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *Store) MonthlyVocab(ctx context.Context, days int) ([]VocabCard, error) {
 	if days <= 0 {
 		days = 35
@@ -580,7 +785,11 @@ func (s *Store) MonthlyVocab(ctx context.Context, days int) ([]VocabCard, error)
 		return nil, err
 	}
 	defer rows.Close()
-	return scanVocabRows(rows)
+	list, err := scanVocabRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	return dedupeVocabCards(list), nil
 }
 
 func (s *Store) AllVocabForReview(ctx context.Context, limit int) ([]VocabCard, error) {
@@ -594,7 +803,33 @@ func (s *Store) AllVocabForReview(ctx context.Context, limit int) ([]VocabCard, 
 		return nil, err
 	}
 	defer rows.Close()
-	return scanVocabRows(rows)
+	list, err := scanVocabRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	return dedupeVocabCards(list), nil
+}
+
+func dedupeVocabCards(cards []VocabCard) []VocabCard {
+	if len(cards) < 2 {
+		return cards
+	}
+	seen := make(map[string]struct{}, len(cards))
+	out := make([]VocabCard, 0, len(cards))
+	for _, c := range cards {
+		r := strings.TrimSpace(c.Reading)
+		surf := textnorm.PlainForDedupe(c.Word)
+		if surf == "" && r == "" {
+			continue
+		}
+		key := surf + "\x00" + r
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, c)
+	}
+	return out
 }
 
 func scanVocabRows(rows *sql.Rows) ([]VocabCard, error) {

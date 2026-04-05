@@ -8,6 +8,25 @@ export interface Exercise {
   createdAt: string;
   completedAt?: string;
   scorePercent?: number;
+  assignmentId?: string;
+  assignmentSort?: number;
+}
+
+/** One scan session (e.g. weekly homework) containing one or more exercises. */
+export interface AssignmentGroup {
+  id: string;
+  /** User-editable label for the print; when empty, UI falls back to だい1 title. */
+  title?: string;
+  createdAt: string;
+  exercises: Exercise[];
+}
+
+export interface AssignmentExerciseRef {
+  id: string;
+  title: string;
+  assignmentSort: number;
+  status: string;
+  scorePercent?: number;
 }
 
 export interface Question {
@@ -26,45 +45,28 @@ export interface HealthResponse {
   geminiConnected: boolean;
   speechTranscribeOK?: boolean;
   childName: string;
-  llmProvider?: string;
-  parseStrategy?: string;
   chatBackend?: string;
   chatBackendSummary?: string;
   chatBackendJudge?: string;
-  rubyBackend?: string;
   ollamaBaseUrl?: string;
-  ocrServerUrl?: string;
 }
 
 export interface AppSettingsResponse {
   ollamaBaseUrl: string;
-  ollamaModel: string;
   ollamaChatModel: string;
-  parseStrategy: string;
-  ocrServerUrl: string;
   summaryChatBackend: string;
   judgeChatBackend: string;
-  rubyBackend: string;
   chatBackend?: string;
   hasGeminiKey: boolean;
   geminiKeyEffective: boolean;
-  parseStrategyEffective: string;
-  ocrServerUrlEffective: string;
-  envOcrServerUrl: string;
-  defaultOcrServerUrl: string;
   summaryChatBackendEffective: string;
   judgeChatBackendEffective: string;
-  rubyBackendEffective: string;
   chatBackendEffective: string;
   envOllamaBaseUrl: string;
-  envOllamaModel: string;
   envOllamaChatModel: string;
-  ollamaModelEffective: string;
   ollamaChatModelEffective: string;
-  envParseStrategy: string;
   envSummaryChatBackend: string;
   envJudgeChatBackend: string;
-  envRubyBackend: string;
   updatedAt?: string;
 }
 
@@ -82,6 +84,19 @@ export interface VocabSummary {
   examples: string[];
 }
 
+/** One flashcard row: short phrase (front) + explanation (back). */
+export interface PrintKeywordCard {
+  phrase: string;
+  nuance: string;
+}
+
+/** Whole-print AI summary (all だい together). */
+export interface PrintLearningSummary {
+  overview: string;
+  keyword_cards: PrintKeywordCard[];
+}
+
+/** @deprecated Per-exercise summary; API uses print-level summary now. */
 export interface LearningSummary {
   key_points: string[];
   vocabulary: VocabSummary[];

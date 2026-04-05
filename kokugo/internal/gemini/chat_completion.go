@@ -28,16 +28,15 @@ func (c *Client) CreateChatCompletion(ctx context.Context, req ai.ChatCompletion
 	if req.ResponseFormat != nil && req.ResponseFormat.Type == "json_object" {
 		cfg.ResponseMIMEType = "application/json"
 		switch req.GeminiStructured {
-		case ai.ChatGeminiStructuredLearningSummary:
-			cfg.ResponseSchema = schemaLearningSummary()
+		case ai.ChatGeminiStructuredPrintLearningSummary:
+			cfg.ResponseSchema = schemaPrintLearningSummary()
 		case ai.ChatGeminiStructuredAnswerJudgment:
 			maxR := int64(16)
 			cfg.ResponseSchema = schemaAnswerJudgment(&maxR)
 		}
 	}
 
-	z := int32(0)
-	cfg.ThinkingConfig = &genai.ThinkingConfig{ThinkingBudget: &z}
+	cfg.ThinkingConfig = thinkingConfigLowEffort(model)
 
 	var systemParts []string
 	var contents []*genai.Content
@@ -70,6 +69,8 @@ func (c *Client) CreateChatCompletion(ctx context.Context, req ai.ChatCompletion
 	}
 
 	jsonMode := req.ResponseFormat != nil && req.ResponseFormat.Type == "json_object"
+	logChatGeminiRequest(model, cfg, contents, jsonMode, req.GeminiStructured)
+
 	resp, err := c.genai.Models.GenerateContent(ctx, model, contents, cfg)
 	if err != nil {
 		log.Printf("gemini_chat_error op=GenerateContent model=%s json=%v structured=%d user_msgs=%d err=%v",

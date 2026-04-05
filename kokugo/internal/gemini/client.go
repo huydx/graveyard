@@ -18,7 +18,7 @@ type Client struct {
 	parseMaxOutputTokens int32
 }
 
-// New creates a client. judgeModel is used for submit scoring when calling chat with that model id; defaults to gemini-2.5-flash-lite.
+// New creates a client. judgeModel is used for submit scoring when calling chat with that model id; defaults to gemini-2.5-flash-lite if empty.
 func New(ctx context.Context, apiKey, model string, parseMaxOutputTokens int32, judgeModel string) (*Client, error) {
 	if apiKey == "" {
 		return nil, errors.New("GOOGLE_API_KEY が空です")
@@ -31,7 +31,7 @@ func New(ctx context.Context, apiKey, model string, parseMaxOutputTokens int32, 
 		return nil, err
 	}
 	if model == "" {
-		model = "gemini-2.5-flash"
+		model = "gemini-3-flash-preview"
 	}
 	if judgeModel == "" {
 		judgeModel = "gemini-2.5-flash-lite"

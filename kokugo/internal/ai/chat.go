@@ -16,7 +16,7 @@ type ChatGeminiStructuredKind int
 
 const (
 	ChatGeminiStructuredNone ChatGeminiStructuredKind = iota
-	ChatGeminiStructuredLearningSummary
+	ChatGeminiStructuredPrintLearningSummary
 	ChatGeminiStructuredAnswerJudgment
 )
 

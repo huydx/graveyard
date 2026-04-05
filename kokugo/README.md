@@ -45,5 +45,5 @@ go run ./cmd/server
 | `KOKUGO_DB` | SQLite パス |
 | `KOKUGO_UPLOADS` | 画像保存ディレクトリ |
 | `GOOGLE_API_KEY` | Gemini API キー |
-| `GEMINI_MODEL` | 既定 `gemini-2.5-flash` |
+| `GEMINI_MODEL` | 既定 `gemini-3-flash-preview`（Gemini 3 Flash） |
 | `CHILD_NAME` | ホームのあいさつ名 |

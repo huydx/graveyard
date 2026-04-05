@@ -10,10 +10,10 @@ import (
 // AppSettings are persisted UI/env overrides (single row, id=1).
 type AppSettings struct {
 	OllamaBaseURL      string
-	OllamaModel        string // vision / worksheet when LLM provider is ollama; empty = use env
+	OllamaModel        string // legacy DB column; unused for worksheet parse (Gemini only)
 	OllamaChatModel    string // chat roles; empty = use env
 	ParseStrategy      string
-	OcrServerURL       string // PaddleOCR HTTP API base; empty = use env / built-in default
+	OcrServerURL       string // legacy DB column; unused
 	GoogleAPIKey       string
 	ChatBackend        string // legacy single column; used as fallback when role columns empty
 	SummaryChatBackend string
@@ -53,14 +53,10 @@ func parseAppSettingTime(s string) time.Time {
 // AppSettingsPatch updates only non-nil string fields. Use ClearGoogleKey to wipe stored API key.
 type AppSettingsPatch struct {
 	OllamaBaseURL      *string
-	OllamaModel        *string
 	OllamaChatModel    *string
-	ParseStrategy      *string
-	OcrServerURL       *string
 	SummaryChatBackend *string
 	JudgeChatBackend   *string
-	RubyBackend        *string
-	ChatBackend        *string // legacy: if set alone, API may fan out to the three role columns
+	ChatBackend        *string // legacy: if set alone, API fans out to summary + judge
 	GoogleAPIKey       *string
 	ClearGoogleKey     bool
 }
@@ -74,26 +70,14 @@ func (s *Store) PatchAppSettings(ctx context.Context, patch AppSettingsPatch) er
 	if patch.OllamaBaseURL != nil {
 		cur.OllamaBaseURL = strings.TrimSpace(*patch.OllamaBaseURL)
 	}
-	if patch.OllamaModel != nil {
-		cur.OllamaModel = strings.TrimSpace(*patch.OllamaModel)
-	}
 	if patch.OllamaChatModel != nil {
 		cur.OllamaChatModel = strings.TrimSpace(*patch.OllamaChatModel)
-	}
-	if patch.ParseStrategy != nil {
-		cur.ParseStrategy = strings.TrimSpace(*patch.ParseStrategy)
-	}
-	if patch.OcrServerURL != nil {
-		cur.OcrServerURL = strings.TrimSpace(*patch.OcrServerURL)
 	}
 	if patch.SummaryChatBackend != nil {
 		cur.SummaryChatBackend = strings.TrimSpace(*patch.SummaryChatBackend)
 	}
 	if patch.JudgeChatBackend != nil {
 		cur.JudgeChatBackend = strings.TrimSpace(*patch.JudgeChatBackend)
-	}
-	if patch.RubyBackend != nil {
-		cur.RubyBackend = strings.TrimSpace(*patch.RubyBackend)
 	}
 	if patch.ChatBackend != nil {
 		cur.ChatBackend = strings.TrimSpace(*patch.ChatBackend)

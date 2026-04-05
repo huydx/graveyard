@@ -6,11 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"strings"
 )
 
-// OneShotParser asks the vision model once (all pages in one request when the model supports multiple images)
-// for structured JSON including ruby. Suited to local VLMs where multi-step pipelines are brittle.
+const geminiDocMaxOutputTokens int32 = 65536
+
+// OneShotParser runs one Gemini vision call per page, then concatenates exercises in page order.
 type OneShotParser struct {
 	M                    ExerciseParseModel
 	ParseMaxOutputTokens int32
@@ -24,39 +24,62 @@ func NewOneShotParser(m ExerciseParseModel, maxOut int32) *OneShotParser {
 	return &OneShotParser{M: m, ParseMaxOutputTokens: maxOut}
 }
 
-func (p *OneShotParser) ParseExercisePages(ctx context.Context, pages []ImagePart) (*ParsedExercise, error) {
-	if len(pages) == 0 {
-		return nil, errors.New("画像がありません")
+func oneShotUserText(pageIndex1, totalPages int) string {
+	if totalPages == 1 {
+		return OneShotSingleUser
 	}
-	n := len(pages)
-	var b strings.Builder
-	if n == 1 {
-		b.WriteString(OneShotSingleUser)
-	} else {
-		b.WriteString("次のページ画像を順に読み、全体を1つの教材としてJSONにまとめてください。\n")
-		for i := range pages {
-			b.WriteString(fmt.Sprintf("- ページ %d/%d\n", i+1, n))
-		}
+	return oneShotUserExtractionRules + "\n\n" + fmt.Sprintf(OneShotPageUser, pageIndex1, totalPages)
+}
+
+// decodeParsedPageJSON accepts either {"exercises":[...]} (週課・複数大問) or a legacy single ParsedExercise object.
+func decodeParsedPageJSON(text string) ([]ParsedExercise, error) {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(text), &probe); err != nil {
+		return nil, err
 	}
-	var parts []ContentPart
-	parts = append(parts, ContentPart{Text: b.String()})
-	for i, page := range pages {
-		mime := page.MIME
-		if mime == "" {
-			mime = "image/jpeg"
+	if _, ok := probe["exercises"]; ok {
+		var bundle struct {
+			Exercises []ParsedExercise `json:"exercises"`
 		}
-		if n > 1 {
-			parts = append(parts, ContentPart{Text: fmt.Sprintf(OneShotPageUser, i+1, n)})
+		if err := json.Unmarshal([]byte(text), &bundle); err != nil {
+			return nil, err
 		}
-		parts = append(parts, ContentPart{Image: &ImagePart{Data: page.Data, MIME: mime}})
+		if len(bundle.Exercises) == 0 {
+			return nil, fmt.Errorf("exercises が空です")
+		}
+		return bundle.Exercises, nil
+	}
+	var single ParsedExercise
+	if err := json.Unmarshal([]byte(text), &single); err != nil {
+		return nil, err
+	}
+	return []ParsedExercise{single}, nil
+}
+
+// concatParsedPages flattens per-page exercise lists in order (page1 ex1, ex2, … then page2 …).
+func concatParsedPages(pages [][]ParsedExercise) []ParsedExercise {
+	var out []ParsedExercise
+	for _, pe := range pages {
+		out = append(out, pe...)
+	}
+	return out
+}
+
+func (p *OneShotParser) parseSinglePage(ctx context.Context, page ImagePart, pageIndex1, totalPages int) ([]ParsedExercise, error) {
+	mime := page.MIME
+	if mime == "" {
+		mime = "image/jpeg"
+	}
+	parts := []ContentPart{
+		{Text: oneShotUserText(pageIndex1, totalPages)},
+		{Image: &ImagePart{Data: page.Data, MIME: mime}},
 	}
 	z := int32(0)
-	log.Printf("parse one_shot_begin pages=%d", n)
 	text, err := p.M.GenerateExerciseParse(ctx, "one_shot_parse", OneShotSystem, parts, ExerciseParseGenOpts{
 		Temperature:      0.2,
 		MaxOutputTokens:  p.ParseMaxOutputTokens,
 		JSONMode:         true,
-		NativeSchema:     NativeExerciseSchemaParsedExerciseWithRuby,
+		NativeSchema:     NativeExerciseSchemaParsedPageBundleWithRuby,
 		VisionHighDetail: true,
 		ThinkingBudget:   &z,
 	})
@@ -64,13 +87,34 @@ func (p *OneShotParser) ParseExercisePages(ctx context.Context, pages []ImagePar
 		return nil, err
 	}
 	text = StripMarkdownFence(text)
-	log.Printf("parse one_shot response chars=%d preview=%q", len(text), LogPreview(text))
+	log.Printf("parse one_shot page=%d/%d response_chars=%d preview=%q", pageIndex1, totalPages, len(text), LogPreview(text))
 
-	var out ParsedExercise
-	if err := json.Unmarshal([]byte(text), &out); err != nil {
-		return nil, fmt.Errorf("one_shot JSON: %w\nraw: %s", err, Truncate(text, 500))
+	list, err := decodeParsedPageJSON(text)
+	if err != nil {
+		return nil, fmt.Errorf("one_shot JSON (page %d/%d): %w\nraw: %s", pageIndex1, totalPages, err, Truncate(text, 500))
 	}
-	log.Printf("parse one_shot_done title=%q passage_chars=%d questions=%d",
-		Truncate(out.Title, 60), len(out.Passage), len(out.Questions))
-	return &out, nil
+	for i := range list {
+		log.Printf("parse one_shot page=%d/%d block=%d title=%q passage_chars=%d questions=%d",
+			pageIndex1, totalPages, i+1, Truncate(list[i].Title, 60), len(list[i].Passage), len(list[i].Questions))
+	}
+	return list, nil
+}
+
+func (p *OneShotParser) ParseExercisePages(ctx context.Context, pages []ImagePart) ([]ParsedExercise, error) {
+	if len(pages) == 0 {
+		return nil, errors.New("画像がありません")
+	}
+	n := len(pages)
+	log.Printf("parse one_shot_begin pages=%d (one request per page)", n)
+	var perPage [][]ParsedExercise
+	for i, page := range pages {
+		pe, err := p.parseSinglePage(ctx, page, i+1, n)
+		if err != nil {
+			return nil, err
+		}
+		perPage = append(perPage, pe)
+	}
+	merged := concatParsedPages(perPage)
+	log.Printf("parse one_shot_done exercise_blocks=%d (pages=%d)", len(merged), n)
+	return merged, nil
 }

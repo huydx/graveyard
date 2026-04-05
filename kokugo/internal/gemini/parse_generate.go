@@ -8,7 +8,7 @@ import (
 	"google.golang.org/genai"
 )
 
-// GenerateExerciseParse implements ai.ExerciseParseModel for worksheet OCR / structure / ruby steps.
+// GenerateExerciseParse implements ai.ExerciseParseModel for one-shot worksheet vision → JSON.
 func (c *Client) GenerateExerciseParse(ctx context.Context, op string, systemInstruction string, parts []ai.ContentPart, opts ai.ExerciseParseGenOpts) (string, error) {
 	maxTok := opts.MaxOutputTokens
 	if maxTok <= 0 {
@@ -22,8 +22,8 @@ func (c *Client) GenerateExerciseParse(ctx context.Context, op string, systemIns
 	if systemInstruction != "" {
 		cfg.SystemInstruction = &genai.Content{Parts: []*genai.Part{{Text: systemInstruction}}}
 	}
-	if opts.ThinkingBudget != nil {
-		cfg.ThinkingConfig = &genai.ThinkingConfig{ThinkingBudget: opts.ThinkingBudget}
+	if tc := thinkingConfigForParse(c.model, opts.ThinkingBudget); tc != nil {
+		cfg.ThinkingConfig = tc
 	}
 	if opts.VisionHighDetail {
 		cfg.MediaResolution = genai.MediaResolutionHigh
@@ -37,6 +37,8 @@ func (c *Client) GenerateExerciseParse(ctx context.Context, op string, systemIns
 		cfg.ResponseSchema = schemaParsedExercisePlain()
 	case ai.NativeExerciseSchemaParsedExerciseWithRuby:
 		cfg.ResponseSchema = schemaParsedExercise()
+	case ai.NativeExerciseSchemaParsedPageBundleWithRuby:
+		cfg.ResponseSchema = schemaParsedPageBundle()
 	}
 
 	genParts := make([]*genai.Part, 0, len(parts)*2)
@@ -52,6 +54,8 @@ func (c *Client) GenerateExerciseParse(ctx context.Context, op string, systemIns
 			genParts = append(genParts, &genai.Part{InlineData: &genai.Blob{Data: p.Image.Data, MIMEType: mime}})
 		}
 	}
+
+	logExerciseParseGeminiRequest(op, c.model, systemInstruction, genParts, opts, maxTok, cfg)
 
 	resp, err := c.genai.Models.GenerateContent(ctx, c.model, []*genai.Content{{Parts: genParts}}, cfg)
 	if err != nil {

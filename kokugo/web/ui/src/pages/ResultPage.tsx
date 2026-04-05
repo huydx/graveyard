@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
-import { generateSummary, getSummary } from "../api/client";
+import { generatePrintSummary, getExercise, getPrintSummary } from "../api/client";
 import RubyHtml from "../components/RubyHtml";
-import { rubyFromWordReading } from "../lib/ruby";
-import type { LearningSummary, SubmitResult } from "../types";
+import type { AssignmentExerciseRef, PrintLearningSummary, SubmitResult } from "../types";
 
 export default function ResultPage() {
   const { id: rawId } = useParams<{ id: string }>();
@@ -11,25 +10,41 @@ export default function ResultPage() {
   const location = useLocation();
   const state = location.state as { result?: SubmitResult } | undefined;
 
-  const [summary, setSummary] = useState<LearningSummary | null>(null);
+  const [summary, setSummary] = useState<PrintLearningSummary | null>(null);
   const [summaryErr, setSummaryErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const [printAssignmentId, setPrintAssignmentId] = useState("");
+  const [siblingRows, setSiblingRows] = useState<AssignmentExerciseRef[]>([]);
 
   useEffect(() => {
     if (!id) return;
-    getSummary(id)
-      .then((s) => setSummary(s))
+    getExercise(id)
+      .then((d) => {
+        const aid = d.exercise.assignmentId?.trim() ?? "";
+        setPrintAssignmentId(aid);
+        setSiblingRows(d.assignment?.exercises ?? []);
+      })
       .catch(() => {
-        /* none yet */
+        setPrintAssignmentId("");
+        setSiblingRows([]);
       });
   }, [id]);
 
+  useEffect(() => {
+    if (!printAssignmentId) return;
+    getPrintSummary(printAssignmentId)
+      .then((s) => setSummary(s))
+      .catch(() => {
+        setSummary(null);
+      });
+  }, [printAssignmentId]);
+
   const onGenSummary = async () => {
-    if (!id) return;
+    if (!printAssignmentId) return;
     setLoading(true);
     setSummaryErr("");
     try {
-      const { summary: s } = await generateSummary(id);
+      const { summary: s } = await generatePrintSummary(printAssignmentId);
       setSummary(s);
     } catch (e) {
       setSummaryErr(e instanceof Error ? e.message : "エラー");
@@ -40,8 +55,19 @@ export default function ResultPage() {
 
   const r = state?.result;
 
+  const nextInPrint = (() => {
+    const idx = siblingRows.findIndex((e) => e.id === id);
+    const rest = idx >= 0 ? siblingRows.slice(idx + 1) : siblingRows;
+    return rest.find((e) => e.status !== "completed");
+  })();
+
   return (
     <section className="view">
+      {printAssignmentId ? (
+        <nav className="print-breadcrumb muted">
+          <Link to={`/prints/${encodeURIComponent(printAssignmentId)}`}>← このプリントにもどる</Link>
+        </nav>
+      ) : null}
       <div className="card">
         <h2>けっか</h2>
         {r ? (
@@ -81,53 +107,79 @@ export default function ResultPage() {
         <p>
           <Link to={`/exercise/${encodeURIComponent(id)}`}>もんだいにもどる</Link>
         </p>
+        {nextInPrint ? (
+          <p className="result-next-print">
+            <Link to={`/exercise/${encodeURIComponent(nextInPrint.id)}`}>
+              つぎのだい（{nextInPrint.assignmentSort + 1}）のれんしゅうへ →
+            </Link>
+          </p>
+        ) : null}
       </div>
 
       <div className="card">
         <h3>このプリントのポイント</h3>
-        {!summary && !summaryErr && (
+        <p className="muted">
+          まとめは<strong>プリントぜんたい</strong>（すべてのだい）を対象にします。くわしくは
+          {printAssignmentId ? (
+            <Link to={`/prints/${encodeURIComponent(printAssignmentId)}`}>プリントページ</Link>
+          ) : (
+            "プリントページ"
+          )}
+          でも見られます。
+        </p>
+        {!printAssignmentId ? (
+          <p className="muted">このもんだいにはプリントIDがないため、ここではまとめをつくれません。</p>
+        ) : null}
+        {!summary && !summaryErr && printAssignmentId ? (
           <button type="button" className="btn btn-primary btn-lg" onClick={() => void onGenSummary()} disabled={loading}>
             {loading ? "つくっている…" : "AIでまとめをつくる"}
           </button>
-        )}
+        ) : null}
         {summaryErr && <p className="status">{summaryErr}</p>}
         {summary && (
-          <div>
-            <ul>
-              {summary.key_points.map((k, i) => (
-                <li key={i}>
-                  <RubyHtml html={k} />
-                </li>
-              ))}
-            </ul>
-            <h4>ことば</h4>
-            <div className="vocab-list">
-              {summary.vocabulary.map((v, i) => (
-                <div key={i} className="vocab-item">
-                  <h4 className="vocab-head">
-                    <RubyHtml
-                      html={v.word.toLowerCase().includes("<ruby") ? v.word : rubyFromWordReading(v.word, v.reading)}
-                    />
-                  </h4>
-                  <p>
-                    <RubyHtml html={v.meaning} />
-                  </p>
-                  <ul>
-                    {v.examples.map((ex, j) => (
-                      <li key={j}>
-                        <RubyHtml html={ex} />
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
+          <div className="print-summary-block">
+            {summary.overview ? (
+              <p className="print-summary-overview">
+                <RubyHtml html={summary.overview} />
+              </p>
+            ) : null}
+            {summary.keyword_cards?.length ? (
+              <>
+                <h4 className="print-summary-kw-head">ことば・ポイント（最大10）</h4>
+                <ul className="print-summary-kw-list">
+                  {summary.keyword_cards.map((row, i) => (
+                    <li key={i} className="print-summary-card-row">
+                      <p className="print-summary-phrase">
+                        <RubyHtml html={row.phrase} />
+                      </p>
+                      {row.nuance ? (
+                        <p className="muted print-summary-nuance">
+                          <RubyHtml html={row.nuance} />
+                        </p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            {printAssignmentId ? (
+              <p className="muted print-summary-regen">
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => void onGenSummary()}
+                  disabled={loading}
+                >
+                  {loading ? "つくりなおしちゅう…" : "まとめをつくりなおす"}
+                </button>
+              </p>
+            ) : null}
           </div>
         )}
       </div>
 
       <p>
-        <Link to="/">ホームへ</Link>
+        <Link to="/prints">プリント一覧へ</Link>
       </p>
     </section>
   );

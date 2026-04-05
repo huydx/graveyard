@@ -9,10 +9,12 @@ const (
 	NativeExerciseSchemaNone NativeExerciseSchema = iota
 	NativeExerciseSchemaPlainParsedExercise
 	NativeExerciseSchemaParsedExerciseWithRuby
+	// NativeExerciseSchemaParsedPageBundleWithRuby is one page → { "exercises": [ ParsedExercise, ... ] }.
+	NativeExerciseSchemaParsedPageBundleWithRuby
 )
 
-// ExerciseParseModel is a single-turn generator (text + optional images) used by bundled three-step / one-shot parsers.
-// Implement for Gemini, Ollama, or custom backends when building your own ExerciseImageParser.
+// ExerciseParseModel is a single-turn generator (text + optional images) used by the one-shot worksheet parser.
+// The server wires Gemini; implement for custom backends if you replace ExerciseImageParser.
 type ExerciseParseModel interface {
 	GenerateExerciseParse(ctx context.Context, op string, systemInstruction string, parts []ContentPart, opts ExerciseParseGenOpts) (string, error)
 }

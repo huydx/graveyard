@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -45,14 +46,10 @@ func (s *Server) Health(w http.ResponseWriter, r *http.Request) {
 		"geminiConnected":    rt.imageParser != nil,
 		"speechTranscribeOK": rt.transcribeOK && rt.summaryChat != nil,
 		"childName":          s.Cfg.ChildName,
-		"llmProvider":        s.Cfg.LLMProvider,
-		"parseStrategy":      rt.effParseStrat,
 		"chatBackend":        rt.effSummaryBackend,
 		"chatBackendSummary": rt.effSummaryBackend,
 		"chatBackendJudge":   rt.effJudgeBackend,
-		"rubyBackend":        rt.effRubyBackend,
 		"ollamaBaseUrl":      rt.effOllamaURL,
-		"ocrServerUrl":       rt.effOcrServerURL,
 	})
 }
 
@@ -146,6 +143,151 @@ func (s *Server) UploadScan(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// CreatePrint creates an empty assignment + draft exercise (no images). JSON body must include a non-empty "title".
+func (s *Server) CreatePrint(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.err(w, http.StatusMethodNotAllowed, "POST のみ")
+		return
+	}
+	var body struct {
+		Title string `json:"title"`
+	}
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			s.err(w, http.StatusBadRequest, "JSONが読めません")
+			return
+		}
+	}
+	title := strings.TrimSpace(body.Title)
+	if title == "" {
+		s.err(w, http.StatusBadRequest, "なまえをいれてください")
+		return
+	}
+	if utf8.RuneCountInString(title) > 200 {
+		s.err(w, http.StatusBadRequest, "タイトルは200文字以内にしてください")
+		return
+	}
+	ex, err := s.Store.CreateEmptyPrintDraft(r.Context())
+	if err != nil {
+		s.err(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := s.Store.UpdateAssignmentTitle(r.Context(), ex.AssignmentID, title); err != nil {
+		s.err(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.json(w, http.StatusOK, map[string]any{
+		"exerciseId":   ex.ID,
+		"assignmentId": ex.AssignmentID,
+	})
+}
+
+// GetPrint returns one assignment (print) with exercises and primaryExerciseId for scanning.
+func (s *Server) GetPrint(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.err(w, http.StatusMethodNotAllowed, "GET のみ")
+		return
+	}
+	aid := r.PathValue("id")
+	if aid == "" {
+		s.err(w, http.StatusBadRequest, "プリントIDが不正です")
+		return
+	}
+	g, err := s.Store.GetAssignmentGroup(r.Context(), aid)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			s.err(w, http.StatusNotFound, "見つかりません")
+			return
+		}
+		s.err(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	pid := ""
+	if len(g.Exercises) > 0 {
+		pid = g.Exercises[0].ID
+	}
+	s.json(w, http.StatusOK, map[string]any{
+		"print":             g,
+		"primaryExerciseId": pid,
+	})
+}
+
+// PatchPrint updates user-editable print fields (assignment title).
+func (s *Server) PatchPrint(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		s.err(w, http.StatusMethodNotAllowed, "PATCH のみ")
+		return
+	}
+	aid := r.PathValue("id")
+	if aid == "" {
+		s.err(w, http.StatusBadRequest, "プリントIDが不正です")
+		return
+	}
+	var body struct {
+		Title *string `json:"title"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		s.err(w, http.StatusBadRequest, "JSONが読めません")
+		return
+	}
+	if body.Title == nil {
+		s.err(w, http.StatusBadRequest, "title が必要です")
+		return
+	}
+	title := strings.TrimSpace(*body.Title)
+	if utf8.RuneCountInString(title) > 200 {
+		s.err(w, http.StatusBadRequest, "タイトルは200文字以内にしてください")
+		return
+	}
+	if err := s.Store.UpdateAssignmentTitle(r.Context(), aid, title); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			s.err(w, http.StatusNotFound, "見つかりません")
+			return
+		}
+		s.err(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.json(w, http.StatusOK, map[string]any{"ok": true, "title": title})
+}
+
+// EnsureScanDraft returns the draft exercise to attach scan pages to: reuses the last row if it is draft, otherwise appends a new draft.
+func (s *Server) EnsureScanDraft(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.err(w, http.StatusMethodNotAllowed, "POST のみ")
+		return
+	}
+	aid := r.PathValue("id")
+	if aid == "" {
+		s.err(w, http.StatusBadRequest, "プリントIDが不正です")
+		return
+	}
+	g, err := s.Store.GetAssignmentGroup(r.Context(), aid)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			s.err(w, http.StatusNotFound, "見つかりません")
+			return
+		}
+		s.err(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if len(g.Exercises) == 0 {
+		s.err(w, http.StatusBadRequest, "このプリントには演習がありません")
+		return
+	}
+	last := g.Exercises[len(g.Exercises)-1]
+	if last.Status == "draft" {
+		s.json(w, http.StatusOK, map[string]any{"exerciseId": last.ID})
+		return
+	}
+	ex, err := s.Store.AppendDraftExerciseToAssignment(r.Context(), aid)
+	if err != nil {
+		s.err(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.json(w, http.StatusOK, map[string]any{"exerciseId": ex.ID})
+}
+
 func randomName() string {
 	return strconv.FormatInt(time.Now().UnixNano(), 36)
 }
@@ -157,7 +299,7 @@ func (s *Server) ParseExercise(w http.ResponseWriter, r *http.Request) {
 	}
 	rt := s.lm()
 	if rt.imageParser == nil {
-		s.err(w, http.StatusServiceUnavailable, "画像の解析ができません（KOKUGO_LLM_PROVIDER と API キー / Ollama を設定してください）")
+		s.err(w, http.StatusServiceUnavailable, "画像の解析ができません（Gemini API キーを GOOGLE_API_KEY またはせっていで指定してください）")
 		return
 	}
 	id := r.PathValue("id")
@@ -168,6 +310,14 @@ func (s *Server) ParseExercise(w http.ResponseWriter, r *http.Request) {
 	ex, _, err := s.Store.GetExercise(r.Context(), id)
 	if err != nil {
 		s.err(w, http.StatusNotFound, "見つかりません")
+		return
+	}
+	if ex.Status != "draft" {
+		s.err(w, http.StatusConflict, "下書きのときだけよみとれます")
+		return
+	}
+	if err := s.Store.EnsureAssignment(r.Context(), id); err != nil {
+		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	paths := ex.ImagePaths
@@ -191,39 +341,68 @@ func (s *Server) ParseExercise(w http.ResponseWriter, r *http.Request) {
 		}
 		pages = append(pages, ai.ImagePart{Data: data, MIME: mimeForPath(p)})
 	}
-	parsed, err := rt.imageParser.ParseExercisePages(r.Context(), pages)
+	parsedList, err := rt.imageParser.ParseExercisePages(r.Context(), pages)
 	if err != nil {
 		log.Printf("parse: %v", err)
 		s.err(w, http.StatusBadGateway, "AIの解析に失敗しました: "+err.Error())
 		return
 	}
-	if err := s.Store.SetExerciseParsed(r.Context(), id, parsed.Title, parsed.Passage); err != nil {
-		s.err(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	var qs []store.Question
-	for _, q := range parsed.Questions {
-		qt := strings.ToLower(strings.TrimSpace(q.Type))
-		if qt != "voice" && qt != "choice" {
-			if len(q.Options) >= 2 {
-				qt = "choice"
-			} else {
-				qt = "voice"
+	var blocks []store.ParsedExerciseBlock
+	var totalQ int
+	for _, pe := range parsedList {
+		var qs []store.Question
+		for _, q := range pe.Questions {
+			qt := strings.ToLower(strings.TrimSpace(q.Type))
+			if qt != "voice" && qt != "choice" {
+				if len(q.Options) >= 2 {
+					qt = "choice"
+				} else {
+					qt = "voice"
+				}
 			}
+			qs = append(qs, store.Question{
+				Type:          qt,
+				Prompt:        q.Prompt,
+				Options:       q.Options,
+				CorrectAnswer: q.Correct,
+				FocusWord:     q.FocusWord,
+			})
 		}
-		qs = append(qs, store.Question{
-			Type:          qt,
-			Prompt:        q.Prompt,
-			Options:       q.Options,
-			CorrectAnswer: q.Correct,
-			FocusWord:     q.FocusWord,
+		totalQ += len(qs)
+		blocks = append(blocks, store.ParsedExerciseBlock{
+			Title: pe.Title, Passage: pe.Passage, Questions: qs,
 		})
 	}
-	if err := s.Store.ReplaceQuestions(r.Context(), id, qs); err != nil {
+	if err := s.Store.SyncAssignmentFromParsed(r.Context(), id, blocks); err != nil {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.json(w, http.StatusOK, map[string]any{"ok": true, "title": parsed.Title, "questionCount": len(qs)})
+	exAfter, _, err := s.Store.GetExercise(r.Context(), id)
+	if err != nil {
+		s.err(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	sibs, _ := s.Store.ListExercisesInAssignment(r.Context(), exAfter.AssignmentID)
+	var exIDs []string
+	primaryOut := ""
+	for _, e := range sibs {
+		exIDs = append(exIDs, e.ID)
+	}
+	if len(sibs) > 0 {
+		primaryOut = sibs[0].ID
+	}
+	firstTitle := ""
+	if len(blocks) > 0 {
+		firstTitle = blocks[0].Title
+	}
+	s.json(w, http.StatusOK, map[string]any{
+		"ok":                true,
+		"title":             firstTitle,
+		"questionCount":     totalQ,
+		"exerciseCount":     len(blocks),
+		"exerciseIds":       exIDs,
+		"primaryExerciseId": primaryOut,
+	})
 }
 
 func mimeForPath(p string) string {
@@ -432,7 +611,27 @@ func (s *Server) GetExercise(w http.ResponseWriter, r *http.Request) {
 			"scorable": strings.TrimSpace(q.CorrectAnswer) != "",
 		})
 	}
-	s.json(w, http.StatusOK, map[string]any{"exercise": ex, "questions": pub})
+	out := map[string]any{"exercise": ex, "questions": pub}
+	if ex.AssignmentID != "" {
+		sibs, err := s.Store.ListExercisesInAssignment(r.Context(), ex.AssignmentID)
+		if err == nil && len(sibs) > 0 {
+			rows := make([]map[string]any, 0, len(sibs))
+			for _, e := range sibs {
+				rows = append(rows, map[string]any{
+					"id":             e.ID,
+					"title":          e.Title,
+					"assignmentSort": e.AssignmentSort,
+					"status":         e.Status,
+					"scorePercent":   e.ScorePercent,
+				})
+			}
+			out["assignment"] = map[string]any{
+				"id":        ex.AssignmentID,
+				"exercises": rows,
+			}
+		}
+	}
+	s.json(w, http.StatusOK, out)
 }
 
 type submitBody struct {
@@ -768,7 +967,94 @@ func wireQuestionResults(qs []store.Question, answers map[string]string, merged 
 	return out
 }
 
-func (s *Server) GenerateSummary(w http.ResponseWriter, r *http.Request) {
+const printSummaryPassageMaxRunes = 1200
+
+func truncateRunesPrintSummary(s string, maxRunes int) string {
+	s = strings.TrimSpace(s)
+	if maxRunes <= 0 || s == "" {
+		return s
+	}
+	if utf8.RuneCountInString(s) <= maxRunes {
+		return s
+	}
+	var b strings.Builder
+	n := 0
+	for _, r := range s {
+		if n >= maxRunes {
+			break
+		}
+		b.WriteRune(r)
+		n++
+	}
+	return b.String() + "…"
+}
+
+func vocabItemsFromPrintSummary(sum *ai.PrintLearningSummary) []store.VocabItem {
+	if sum == nil || len(sum.KeywordCards) == 0 {
+		return nil
+	}
+	overview := strings.TrimSpace(sum.Overview)
+	if overview == "" {
+		overview = "このプリントのポイントをおさらいしよう。"
+	}
+	out := make([]store.VocabItem, 0, len(sum.KeywordCards))
+	for _, c := range sum.KeywordCards {
+		p := strings.TrimSpace(c.Phrase)
+		if p == "" {
+			continue
+		}
+		meaning := strings.TrimSpace(c.Nuance)
+		if meaning == "" {
+			meaning = overview
+		}
+		out = append(out, store.VocabItem{Word: p, Meaning: meaning})
+	}
+	return out
+}
+
+func (s *Server) buildPrintSummaryPayload(ctx context.Context, g *store.AssignmentGroup) ([]byte, error) {
+	var exercises []map[string]any
+	for _, e := range g.Exercises {
+		if e.Status != "parsed" && e.Status != "completed" {
+			continue
+		}
+		ex, qs, err := s.Store.GetExercise(ctx, e.ID)
+		if err != nil {
+			continue
+		}
+		pub := make([]map[string]any, 0, len(qs))
+		for _, q := range qs {
+			pub = append(pub, map[string]any{
+				"type": q.Type, "prompt": q.Prompt, "options": q.Options, "focusWord": q.FocusWord,
+			})
+		}
+		row := map[string]any{
+			"dai":             e.AssignmentSort + 1,
+			"title":           ex.Title,
+			"status":          ex.Status,
+			"passage_excerpt": truncateRunesPrintSummary(ex.Passage, printSummaryPassageMaxRunes),
+			"questions":       pub,
+		}
+		if ex.ScorePercent != 0 {
+			row["score_percent"] = ex.ScorePercent
+		}
+		exercises = append(exercises, row)
+	}
+	if len(exercises) == 0 {
+		return nil, fmt.Errorf("no parsed exercises")
+	}
+	title := strings.TrimSpace(g.Title)
+	if title == "" && len(g.Exercises) > 0 {
+		title = strings.TrimSpace(g.Exercises[0].Title)
+	}
+	payload := map[string]any{
+		"print_title": title,
+		"exercises":   exercises,
+	}
+	return json.Marshal(payload)
+}
+
+func (s *Server) GeneratePrintSummary(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		s.err(w, http.StatusMethodNotAllowed, "POST のみ")
 		return
@@ -778,20 +1064,28 @@ func (s *Server) GenerateSummary(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusServiceUnavailable, "まとめの生成には要約用チャット（Gemini または Ollama）が必要です")
 		return
 	}
-	eid := r.PathValue("id")
-	if eid == "" {
-		s.err(w, http.StatusBadRequest, "演習IDが不正です")
+	aid := r.PathValue("id")
+	if aid == "" {
+		s.err(w, http.StatusBadRequest, "プリントIDが不正です")
 		return
 	}
-	ex, qs, err := s.Store.GetExercise(r.Context(), eid)
+	g, err := s.Store.GetAssignmentGroup(r.Context(), aid)
 	if err != nil {
-		s.err(w, http.StatusNotFound, "見つかりません")
+		if errors.Is(err, sql.ErrNoRows) {
+			s.err(w, http.StatusNotFound, "見つかりません")
+			return
+		}
+		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	qj, _ := json.Marshal(qs)
-	sum, err := ai.SummarizeLearning(r.Context(), rt.summaryChat, rt.summaryModel, ex.Title, ex.Passage, string(qj), ex.ScorePercent)
+	payload, err := s.buildPrintSummaryPayload(r.Context(), g)
 	if err != nil {
-		log.Printf("summary: %v", err)
+		s.err(w, http.StatusBadRequest, "よみとりずみのもんだいがないとまとめられません")
+		return
+	}
+	sum, err := ai.SummarizePrint(r.Context(), rt.summaryChat, rt.summaryModel, string(payload))
+	if err != nil {
+		log.Printf("print_summary: %v", err)
 		s.err(w, http.StatusBadGateway, "まとめの生成に失敗: "+err.Error())
 		return
 	}
@@ -800,46 +1094,58 @@ func (s *Server) GenerateSummary(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusInternalServerError, "encode")
 		return
 	}
-	if err := s.Store.SaveSummary(r.Context(), eid, string(raw)); err != nil {
+	if err := s.Store.SavePrintSummary(r.Context(), aid, string(raw)); err != nil {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	var items []store.VocabItem
-	for _, v := range sum.Vocabulary {
-		items = append(items, store.VocabItem{
-			Word: v.Word, Reading: v.Reading, Meaning: v.Meaning, Examples: v.Examples,
-		})
-	}
-	if err := s.Store.InsertVocabCards(r.Context(), eid, items); err != nil {
-		s.err(w, http.StatusInternalServerError, err.Error())
-		return
+	if len(g.Exercises) > 0 {
+		anchor := g.Exercises[0].ID
+		items := vocabItemsFromPrintSummary(sum)
+		if err := s.Store.ReplaceVocabCardsForAssignment(r.Context(), aid, anchor, items); err != nil {
+			log.Printf("print_summary vocab: %v", err)
+		}
 	}
 	s.json(w, http.StatusOK, map[string]any{"summary": sum})
 }
 
-func (s *Server) GetSummary(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if id == "" {
-		s.err(w, http.StatusBadRequest, "演習IDが不正です")
+func (s *Server) GetPrintSummary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.err(w, http.StatusMethodNotAllowed, "GET のみ")
 		return
 	}
-	j, err := s.Store.GetSummary(r.Context(), id)
+	aid := r.PathValue("id")
+	if aid == "" {
+		s.err(w, http.StatusBadRequest, "プリントIDが不正です")
+		return
+	}
+	j, err := s.Store.GetPrintSummary(r.Context(), aid)
 	if err != nil || j == "" {
 		s.err(w, http.StatusNotFound, "まだありません")
 		return
 	}
+	var sum ai.PrintLearningSummary
+	if err := json.Unmarshal([]byte(j), &sum); err != nil {
+		s.err(w, http.StatusInternalServerError, "まとめの形式が壊れています")
+		return
+	}
+	ai.NormalizePrintLearningSummary(&sum)
+	out, err := json.Marshal(sum)
+	if err != nil {
+		s.err(w, http.StatusInternalServerError, "encode")
+		return
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(j))
+	_, _ = w.Write(out)
 }
 
 func (s *Server) History(w http.ResponseWriter, r *http.Request) {
-	list, err := s.Store.ListExercises(r.Context(), 80)
+	groups, err := s.Store.ListAssignmentsForHistory(r.Context(), 80)
 	if err != nil {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.json(w, http.StatusOK, map[string]any{"exercises": list})
+	s.json(w, http.StatusOK, map[string]any{"assignments": groups})
 }
 
 func (s *Server) MonthlyReminder(w http.ResponseWriter, r *http.Request) {
@@ -879,6 +1185,10 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/settings", s.PutSettings)
 	mux.HandleFunc("POST /api/transcribe", s.TranscribeAudio)
 	mux.HandleFunc("POST /api/upload", s.UploadScan)
+	mux.HandleFunc("GET /api/prints/{id}", s.GetPrint)
+	mux.HandleFunc("PATCH /api/prints/{id}", s.PatchPrint)
+	mux.HandleFunc("POST /api/prints/{id}/ensure-scan-draft", s.EnsureScanDraft)
+	mux.HandleFunc("POST /api/prints", s.CreatePrint)
 	mux.HandleFunc("POST /api/exercises/{id}/pages", s.AddExercisePage)
 	mux.HandleFunc("DELETE /api/exercises/{id}/pages/{pageIndex}", s.DeleteExercisePage)
 	mux.HandleFunc("POST /api/exercises/{id}/parse", s.ParseExercise)
@@ -889,8 +1199,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/exercises/{id}/submit", s.SubmitAnswers)
 	mux.HandleFunc("POST /api/exercises/{id}/questions/{questionId}/check", s.CheckQuestion)
 	mux.HandleFunc("GET /api/exercises/{id}/questions/{questionId}/solution", s.GetQuestionSolution)
-	mux.HandleFunc("POST /api/exercises/{id}/summary", s.GenerateSummary)
-	mux.HandleFunc("GET /api/exercises/{id}/summary", s.GetSummary)
+	mux.HandleFunc("POST /api/prints/{id}/summary", s.GeneratePrintSummary)
+	mux.HandleFunc("GET /api/prints/{id}/summary", s.GetPrintSummary)
 	mux.HandleFunc("GET /api/history", s.History)
 	mux.HandleFunc("GET /api/reminders/monthly", s.MonthlyReminder)
 	mux.HandleFunc("POST /api/vocab/{id}/review", s.ReviewCard)

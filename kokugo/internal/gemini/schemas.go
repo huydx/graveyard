@@ -2,6 +2,23 @@ package gemini
 
 import "google.golang.org/genai"
 
+// schemaParsedPageBundle wraps one or more exercises from a single worksheet page (週課・複数大問).
+// Note: Gemini GenerateContent response_schema rejects some JSON Schema array constraints (e.g. minItems);
+// keep this schema minimal or the API returns INVALID_ARGUMENT.
+func schemaParsedPageBundle() *genai.Schema {
+	return &genai.Schema{
+		Type: genai.TypeObject,
+		Properties: map[string]*genai.Schema{
+			"exercises": {
+				Type:        genai.TypeArray,
+				Items:       schemaParsedExercise(),
+				Description: "このページに含まれる国語の大問・課題ごとのブロック（順序はプリントの上から）。1件以上で返す。",
+			},
+		},
+		Required: []string{"exercises"},
+	}
+}
+
 func schemaParsedExercisePlain() *genai.Schema {
 	maxQ := int64(12)
 	maxPassage := int64(1200)
@@ -91,32 +108,44 @@ func schemaAnswerJudgment(maxResults *int64) *genai.Schema {
 	}
 }
 
-func schemaLearningSummary() *genai.Schema {
-	maxKeys := int64(12)
-	maxV := int64(12)
+func schemaPrintKeywordCard() *genai.Schema {
+	maxPhrase := int64(80)
+	maxNuance := int64(320)
 	return &genai.Schema{
 		Type: genai.TypeObject,
 		Properties: map[string]*genai.Schema{
-			"key_points": {
-				Type:     genai.TypeArray,
-				Items:    &genai.Schema{Type: genai.TypeString},
-				MaxItems: &maxKeys,
+			"phrase": {
+				Type:        genai.TypeString,
+				Description: "フラッシュカードのおもて：ことば・熟語だけを短く。説明や理由は書かない。漢字はruby付き可。",
+				MaxLength:   &maxPhrase,
 			},
-			"vocabulary": {
-				Type: genai.TypeArray,
-				Items: &genai.Schema{
-					Type: genai.TypeObject,
-					Properties: map[string]*genai.Schema{
-						"word":     {Type: genai.TypeString},
-						"reading":  {Type: genai.TypeString},
-						"meaning":  {Type: genai.TypeString},
-						"examples": {Type: genai.TypeArray, Items: &genai.Schema{Type: genai.TypeString}},
-					},
-					Required: []string{"word", "reading", "meaning", "examples"},
-				},
-				MaxItems: &maxV,
+			"nuance": {
+				Type:        genai.TypeString,
+				Description: "フラッシュカードのうら：そのことばがプリントで大事な理由や意味を子ども向けに1〜2文。漢字はruby付き可。",
+				MaxLength:   &maxNuance,
 			},
 		},
-		Required: []string{"key_points", "vocabulary"},
+		Required: []string{"phrase", "nuance"},
+	}
+}
+
+// schemaPrintLearningSummary: whole-print summary; keyword_cards length capped in app (max 10).
+func schemaPrintLearningSummary() *genai.Schema {
+	maxCards := int64(10)
+	return &genai.Schema{
+		Type: genai.TypeObject,
+		Properties: map[string]*genai.Schema{
+			"overview": {
+				Type:        genai.TypeString,
+				Description: "このプリント全体（すべてのだい）を子ども向けに短くまとめた段落。漢字にはrubyを付ける。",
+			},
+			"keyword_cards": {
+				Type:        genai.TypeArray,
+				Items:       schemaPrintKeywordCard(),
+				MaxItems:    &maxCards,
+				Description: "おもて=短い語句、うら=その説明。最大10枚。phrase に長い説明を書かない。",
+			},
+		},
+		Required: []string{"overview", "keyword_cards"},
 	}
 }
