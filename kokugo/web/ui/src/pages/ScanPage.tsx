@@ -171,8 +171,11 @@ export default function ScanPage() {
     try {
       const pr = await parseExercise(draftExerciseId);
       const n = pr.exerciseCount ?? 1;
+      const pageNote = pageCount > 1 ? "（複数ページはひとつのだいにまとめました）" : "";
       setParseStatus(
-        n > 1 ? `よみとりました！${n}つのだいにわけました。プリントのページにもどります。` : "よみとりました！プリントのページへいきます。"
+        n > 1
+          ? `よみとりました！${n}つのだいにわけました。${pageNote}プリントのページにもどります。`.trim()
+          : `よみとりました！${pageNote}プリントのページへいきます。`.trim()
       );
       window.setTimeout(() => navigate(`/prints/${encodeURIComponent(assignmentId)}`), 500);
     } catch (err) {
@@ -204,8 +207,8 @@ export default function ScanPage() {
         <div className="card">
           <h2>ステップ1: プリントをとる</h2>
           <p className="muted">
-            タブレットでは「カメラでとる」がおすすめ。PCでは「がめんうえでシャッター」かファイルをえらぶ。複数ページはアルバムでまとめてえらぶか、Ctrl+V / ⌘V
-            でクリップボードの画像をいちどに追加します。Tailscale のアドレスだけ（https ではない）でつないでいるとき、ブラウザによってはシャッターがつかえません。
+            タブレットでは「カメラでとる」がおすすめ。PCでは「がめんうえでシャッター」かファイルをえらぶ。複数まいは同じプリントのつづきとしてアルバムでまとめてえらぶか、Ctrl+V / ⌘V
+            でいちどに追加します（よみとるときはまとめてひとつのだいになります）。Tailscale のアドレスだけ（https ではない）でつないでいるとき、ブラウザによってはシャッターがつかえません。
           </p>
 
           <div className="scan-actions">
@@ -292,8 +295,8 @@ export default function ScanPage() {
               disabled={!draftExerciseId || pageCount < 1}
             >
               {pageCount > 1
-                ? `${pageCount}ページをよみとる（複数だいがあればわける）（Gemini）`
-                : "よみとる（複数だいがあればわける）（Gemini）"}
+                ? `${pageCount}ページをまとめてよみとる（ひとつのだい）（Gemini）`
+                : "よみとる（1まいのなかに複数だいがあればわける）（Gemini）"}
             </button>
             {pageCount < 1 ? <p className="muted">ページが1まいはいってからよみとれます。</p> : null}
           </div>

@@ -54,9 +54,9 @@ type PrintLearningSummary struct {
 // UnmarshalJSON accepts current "keyword_cards" or legacy "keywords_nuances" ([]string).
 func (s *PrintLearningSummary) UnmarshalJSON(data []byte) error {
 	type legacy struct {
-		Overview          string             `json:"overview"`
-		KeywordCards      []PrintKeywordCard `json:"keyword_cards"`
-		KeywordsNuances   []string           `json:"keywords_nuances"`
+		Overview        string             `json:"overview"`
+		KeywordCards    []PrintKeywordCard `json:"keyword_cards"`
+		KeywordsNuances []string           `json:"keywords_nuances"`
 	}
 	var l legacy
 	if err := json.Unmarshal(data, &l); err != nil {

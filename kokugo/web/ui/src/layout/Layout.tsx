@@ -14,11 +14,25 @@ function titleForPath(pathname: string): string {
   return "こくごアトリエ";
 }
 
+const LS_SIDEBAR = "kokugo-sidebar-expanded";
+
 export default function Layout() {
   const location = useLocation();
   const [badge, setBadge] = useState("AI: せつぞくまち");
   const [geminiOk, setGeminiOk] = useState(false);
   const [childName, setChildName] = useState("がくせい");
+  const [sidebarExpanded, setSidebarExpanded] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return window.localStorage.getItem(LS_SIDEBAR) !== "false";
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LS_SIDEBAR, sidebarExpanded ? "true" : "false");
+    } catch {
+      /* ignore */
+    }
+  }, [sidebarExpanded]);
 
   useEffect(() => {
     getHealth()
@@ -39,31 +53,56 @@ export default function Layout() {
   }, [location.pathname]);
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">こくごアトリエ</div>
-        <div className="profile">
-          <div className="avatar" aria-hidden="true">
-            🐦
-          </div>
-          <div className="profile-text">
-            <span>{childName}</span>
-            <small>がんばっているよ</small>
-          </div>
-        </div>
-        <nav className="nav nav-prints-only">
-          <NavLink to="/prints" className={({ isActive }) => "nav-btn nav-btn-main" + (isActive ? " active" : "")}>
-            プリント
-          </NavLink>
-        </nav>
-        <div className="sidebar-secondary">
-          <Link to="/remind" className="sidebar-secondary-link">
-            まいつきおさらい
-          </Link>
-          <Link to="/settings" className="sidebar-secondary-link">
-            せってい
-          </Link>
-        </div>
+    <div className={"app-shell" + (sidebarExpanded ? "" : " app-shell--sidebar-collapsed")}>
+      <aside className={"sidebar" + (sidebarExpanded ? "" : " sidebar--collapsed")} aria-label="メインメニュー">
+        {sidebarExpanded ? (
+          <>
+            <div className="sidebar-collapse-row">
+              <button
+                type="button"
+                className="sidebar-edge-toggle"
+                onClick={() => setSidebarExpanded(false)}
+                aria-expanded={true}
+                aria-label="左のメニューをしまう（よみこみのスペースをひろげる）"
+              >
+                ⟨
+              </button>
+            </div>
+            <div className="brand">こくごアトリエ</div>
+            <div className="profile">
+              <div className="avatar" aria-hidden="true">
+                🐦
+              </div>
+              <div className="profile-text">
+                <span>{childName}</span>
+                <small>がんばっているよ</small>
+              </div>
+            </div>
+            <nav className="nav nav-prints-only">
+              <NavLink to="/prints" className={({ isActive }) => "nav-btn nav-btn-main" + (isActive ? " active" : "")}>
+                プリント
+              </NavLink>
+            </nav>
+            <div className="sidebar-secondary">
+              <Link to="/remind" className="sidebar-secondary-link">
+                まいつきおさらい
+              </Link>
+              <Link to="/settings" className="sidebar-secondary-link">
+                せってい
+              </Link>
+            </div>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="sidebar-edge-toggle sidebar-edge-toggle--expand"
+            onClick={() => setSidebarExpanded(true)}
+            aria-expanded={false}
+            aria-label="メニューをひらく"
+          >
+            ⟩
+          </button>
+        )}
       </aside>
       <main className="main">
         <header className="topbar">

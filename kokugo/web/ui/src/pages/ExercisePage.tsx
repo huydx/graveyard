@@ -18,6 +18,7 @@ import { furiganaToSpeechText } from "../lib/ruby";
 import type { AssignmentExerciseRef, Question, QuestionCheckResult } from "../types";
 
 const MAX_VOICE_RECORD_MS = 10_000;
+const LS_QUESTIONS_PANEL = "kokugo-exercise-questions-expanded";
 
 export default function ExercisePage() {
   const { id: rawId } = useParams<{ id: string }>();
@@ -42,10 +43,22 @@ export default function ExercisePage() {
   const [scanModalIndex, setScanModalIndex] = useState<number | null>(null);
   const [assignmentSiblings, setAssignmentSiblings] = useState<AssignmentExerciseRef[]>([]);
   const [printAssignmentId, setPrintAssignmentId] = useState("");
+  const [questionsPanelExpanded, setQuestionsPanelExpanded] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return window.localStorage.getItem(LS_QUESTIONS_PANEL) !== "false";
+  });
 
   const isPressingMicRef = useRef(false);
   const holdRecordingActiveRef = useRef(false);
   const maxRecordTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LS_QUESTIONS_PANEL, questionsPanelExpanded ? "true" : "false");
+    } catch {
+      /* ignore */
+    }
+  }, [questionsPanelExpanded]);
 
   const clearMaxRecordTimer = useCallback(() => {
     if (maxRecordTimerRef.current !== null) {
@@ -289,7 +302,11 @@ export default function ExercisePage() {
           </div>
         </div>
       )}
-      <div className="exercise-layout">
+      <div
+        className={
+          "exercise-layout" + (questionsPanelExpanded ? "" : " exercise-layout--q-collapsed")
+        }
+      >
         <article className="card passage-panel">
           <div className="passage-head">
             <h2 className="passage-title">
@@ -328,7 +345,44 @@ export default function ExercisePage() {
           </div>
         </article>
 
-        <article className="card question-panel">
+        <article
+          className={
+            "card question-panel" + (questionsPanelExpanded ? "" : " question-panel--collapsed")
+          }
+        >
+          <div className="question-panel-toolbar">
+            <button
+              type="button"
+              className="question-panel-toggle"
+              onClick={() => setQuestionsPanelExpanded((v) => !v)}
+              aria-expanded={questionsPanelExpanded}
+              aria-label={
+                questionsPanelExpanded
+                  ? "もんだいパネルをしまう（よみこみをひろげる）"
+                  : "もんだいパネルをひらく"
+              }
+            >
+              {questionsPanelExpanded ? (
+                <>
+                  <span aria-hidden>⟨</span>
+                  <span className="question-panel-toggle-label">しまう</span>
+                </>
+              ) : (
+                <>
+                  <span className="question-panel-toggle-collapsed-title">もんだい</span>
+                  {questions.length > 0 ? (
+                    <span className="question-panel-toggle-progress">
+                      {qIdx + 1}/{questions.length}
+                    </span>
+                  ) : null}
+                  <span className="question-panel-toggle-open-hint" aria-hidden>
+                    ⟩
+                  </span>
+                </>
+              )}
+            </button>
+          </div>
+          <div className="question-panel-inner">
           {!questions.length ? (
             <p className="q-prompt">もんだいがありません。スキャンをやりなおしてください。</p>
           ) : (
@@ -507,6 +561,7 @@ export default function ExercisePage() {
               </button>
             </>
           )}
+          </div>
         </article>
       </div>
 

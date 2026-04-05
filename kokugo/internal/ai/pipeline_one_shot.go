@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 )
 
 const geminiDocMaxOutputTokens int32 = 65536
@@ -65,6 +66,47 @@ func concatParsedPages(pages [][]ParsedExercise) []ParsedExercise {
 	return out
 }
 
+// mergeParsedExercisesFromMultiPageScan joins every parsed block (across pages) into one exercise.
+// Users who upload several photos as one worksheet expect a single だい in the app, not one per image.
+func mergeParsedExercisesFromMultiPageScan(blocks []ParsedExercise) ParsedExercise {
+	if len(blocks) == 0 {
+		return ParsedExercise{}
+	}
+	if len(blocks) == 1 {
+		return blocks[0]
+	}
+	seenTitle := make(map[string]struct{})
+	var titles []string
+	for _, b := range blocks {
+		t := strings.TrimSpace(b.Title)
+		if t == "" {
+			continue
+		}
+		if _, ok := seenTitle[t]; ok {
+			continue
+		}
+		seenTitle[t] = struct{}{}
+		titles = append(titles, t)
+	}
+	title := strings.Join(titles, " · ")
+	if title == "" {
+		title = "よみとり"
+	}
+	var passageParts []string
+	for _, b := range blocks {
+		p := strings.TrimSpace(b.Passage)
+		if p != "" {
+			passageParts = append(passageParts, p)
+		}
+	}
+	passage := strings.Join(passageParts, "\n\n")
+	var questions []ParsedQuestion
+	for _, b := range blocks {
+		questions = append(questions, b.Questions...)
+	}
+	return ParsedExercise{Title: title, Passage: passage, Questions: questions}
+}
+
 func (p *OneShotParser) parseSinglePage(ctx context.Context, page ImagePart, pageIndex1, totalPages int) ([]ParsedExercise, error) {
 	mime := page.MIME
 	if mime == "" {
@@ -115,6 +157,10 @@ func (p *OneShotParser) ParseExercisePages(ctx context.Context, pages []ImagePar
 		perPage = append(perPage, pe)
 	}
 	merged := concatParsedPages(perPage)
+	if n > 1 && len(merged) > 0 {
+		merged = []ParsedExercise{mergeParsedExercisesFromMultiPageScan(merged)}
+		log.Printf("parse one_shot_merged_multi_page_pages=%d -> single exercise (questions=%d)", n, len(merged[0].Questions))
+	}
 	log.Printf("parse one_shot_done exercise_blocks=%d (pages=%d)", len(merged), n)
 	return merged, nil
 }
