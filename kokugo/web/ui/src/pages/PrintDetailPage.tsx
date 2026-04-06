@@ -9,6 +9,7 @@ import {
   exerciseTitleFallbackHtml,
   isOnlyBareEmptyPrint,
 } from "../lib/printTitle";
+import { paths } from "../lib/paths";
 import * as L from "../lib/uiLabelsRuby";
 import type { AssignmentGroup, Exercise, PrintLearningSummary } from "../types";
 
@@ -106,9 +107,9 @@ export default function PrintDetailPage() {
 
   const openExercise = (ex: Exercise) => {
     if (ex.status === "completed") {
-      navigate(`/result/${encodeURIComponent(ex.id)}`);
+      navigate(paths.kokugo.result(ex.id));
     } else {
-      navigate(`/exercise/${encodeURIComponent(ex.id)}`);
+      navigate(paths.kokugo.exercise(ex.id));
     }
   };
 
@@ -120,7 +121,7 @@ export default function PrintDetailPage() {
 
   const goScan = () => {
     if (!assignmentId) return;
-    navigate(`/prints/${encodeURIComponent(assignmentId)}/scan`);
+    navigate(paths.kokugo.scan(assignmentId));
   };
 
   const removeOne = async (ex: Exercise) => {
@@ -144,7 +145,7 @@ export default function PrintDetailPage() {
     setDeletingId(p.id);
     try {
       await deleteExercise(p.id);
-      navigate("/prints");
+      navigate(paths.kokugo.prints);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "エラー");
     } finally {
@@ -158,7 +159,7 @@ export default function PrintDetailPage() {
         <p className="status">
           <RubyHtml html={L.invalidId} />
         </p>
-        <Link to="/prints">
+        <Link to={paths.kokugo.prints}>
           <RubyHtml html={L.toPrintList} />
         </Link>
       </div>
@@ -169,7 +170,7 @@ export default function PrintDetailPage() {
     return (
       <div className="card">
         <p className="status">{err}</p>
-        <Link to="/prints">
+        <Link to={paths.kokugo.prints}>
           <RubyHtml html={L.toPrintList} />
         </Link>
       </div>
@@ -207,7 +208,7 @@ export default function PrintDetailPage() {
   return (
     <section className="view print-detail">
       <nav className="print-breadcrumb muted">
-        <Link to="/prints">
+        <Link to={paths.kokugo.prints}>
           <RubyHtml html={L.backPrintList} />
         </Link>
       </nav>

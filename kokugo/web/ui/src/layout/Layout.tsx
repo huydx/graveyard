@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { getHealth } from "../api/client";
 import RubyHtml from "../components/RubyHtml";
+import { paths } from "../lib/paths";
 import * as L from "../lib/uiLabelsRuby";
 
-const LS_SIDEBAR = "kokugo-sidebar-expanded";
+const LS_SIDEBAR = "study-app-sidebar-expanded";
 
 export default function Layout() {
   const location = useLocation();
@@ -15,6 +16,9 @@ export default function Layout() {
     if (typeof window === "undefined") return true;
     return window.localStorage.getItem(LS_SIDEBAR) !== "false";
   });
+
+  const inKokugo = location.pathname.startsWith("/kokugo");
+  const inSansu = location.pathname.startsWith("/sansu");
 
   useEffect(() => {
     try {
@@ -58,9 +62,19 @@ export default function Layout() {
                 ⟨
               </button>
             </div>
-            <div className="brand">
-              <RubyHtml html={L.brandTitle} />
-            </div>
+            <Link to={paths.home} className="brand brand-super">
+              <RubyHtml html={L.superAppTitle} />
+            </Link>
+            {inKokugo ? (
+              <div className="brand brand-sub">
+                <RubyHtml html={L.brandTitle} />
+              </div>
+            ) : null}
+            {inSansu ? (
+              <div className="brand brand-sub">
+                <RubyHtml html={L.sansuPageTitle} />
+              </div>
+            ) : null}
             <div className="profile">
               <div className="avatar" aria-hidden="true">
                 🐦
@@ -72,19 +86,36 @@ export default function Layout() {
                 </small>
               </div>
             </div>
-            <nav className="nav nav-prints-only">
-              <NavLink to="/prints" className={({ isActive }) => "nav-btn nav-btn-main" + (isActive ? " active" : "")}>
-                <RubyHtml html={L.navPrint} />
-              </NavLink>
-            </nav>
-            <div className="sidebar-secondary">
-              <Link to="/remind" className="sidebar-secondary-link">
-                <RubyHtml html={L.navMonthlyReview} />
-              </Link>
-              <Link to="/settings" className="sidebar-secondary-link">
-                <RubyHtml html={L.navSettings} />
-              </Link>
-            </div>
+            <Link to={paths.home} className="sidebar-hub-link">
+              <RubyHtml html={L.navAppHub} />
+            </Link>
+            {inKokugo ? (
+              <>
+                <nav className="nav nav-prints-only">
+                  <NavLink
+                    to={paths.kokugo.prints}
+                    className={({ isActive }) => "nav-btn nav-btn-main" + (isActive ? " active" : "")}
+                  >
+                    <RubyHtml html={L.navPrint} />
+                  </NavLink>
+                </nav>
+                <div className="sidebar-secondary">
+                  <Link to={paths.kokugo.remind} className="sidebar-secondary-link">
+                    <RubyHtml html={L.navMonthlyReview} />
+                  </Link>
+                  <Link to={paths.kokugo.settings} className="sidebar-secondary-link">
+                    <RubyHtml html={L.navSettings} />
+                  </Link>
+                </div>
+              </>
+            ) : null}
+            {inSansu ? (
+              <div className="sidebar-secondary sidebar-secondary--sansu">
+                <p className="sidebar-sansu-hint">
+                  <RubyHtml html={L.sansuSidebarHint} />
+                </p>
+              </div>
+            ) : null}
           </>
         ) : (
           <button

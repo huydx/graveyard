@@ -3,6 +3,17 @@
  * Render with <RubyHtml html={…} /> (see components/RubyHtml.tsx).
  */
 
+/** Super-app shell (home + shared chrome). */
+export const superAppTitle = `<ruby>学習<rt>がくしゅう</rt></ruby>スタジオ`;
+export const superAppLead = `<ruby>科目<rt>かもく</rt></ruby>を<ruby>選<rt>えら</rt></ruby>んで<ruby>始<rt>はじ</rt></ruby>めましょう`;
+export const soonBadge = `<ruby>準備中<rt>じゅんびちゅう</rt></ruby>`;
+export const backToAppHub = `← <ruby>科目<rt>かもく</rt></ruby>の<ruby>一覧<rt>いちらん</rt></ruby>`;
+export const navAppHub = `<ruby>科目<rt>かもく</rt></ruby><ruby>一覧<rt>いちらん</rt></ruby>`;
+export const sansuPageTitle = `<ruby>算数<rt>さんすう</rt></ruby>`;
+export const sansuPageLead = `ここに<ruby>算数<rt>さんすう</rt></ruby>の<ruby>練習<rt>れんしゅう</rt></ruby>やゲームをのせる<ruby>予定<rt>よてい</rt></ruby>です。しばらくおまちください。`;
+export const sansuSidebarHint = `<ruby>内容<rt>ないよう</rt></ruby>はこれから<ruby>足<rt>た</rt></ruby>していきます`;
+
+/** Kokugo mini-app name in sidebar (under super-app home link). */
 export const brandTitle = `<ruby>国語<rt>こくご</rt></ruby>アトリエ`;
 
 export const navPrint = `プリント`;
@@ -246,15 +257,26 @@ export const settingsOptSavingPlain = (name: string) => `${name}（保存中・�
 export const settingsOptEnvOllamaPlain = (current?: string) =>
   `環境変数の既定（OLLAMA_CHAT_MODEL → OLLAMA_MODEL${current ? ` — いまは ${current}` : ""}）`;
 
-/** Top bar title HTML by route */
+/** Top bar title HTML by route (supports `/kokugo/...` and other mini-apps). */
 export function titleHtmlForPath(pathname: string): string {
-  if (pathname === "/prints/new") return titleNewPrint;
-  if (/\/prints\/[^/]+\/scan/.test(pathname)) return titleScan;
-  if (pathname.startsWith("/prints/") && pathname !== "/prints") return titlePrint;
-  if (pathname.startsWith("/exercise/")) return titleExercise;
-  if (pathname.startsWith("/result/")) return titleResult;
-  if (pathname.startsWith("/remind")) return titleRemind;
-  if (pathname.startsWith("/settings")) return titleSettings;
-  if (pathname === "/prints") return titlePrint;
+  const K = "/kokugo";
+  if (pathname.startsWith(K)) {
+    const rest = pathname.slice(K.length) || "/";
+    return titleHtmlForKokugoPath(rest);
+  }
+  if (pathname === "/sansu" || pathname.startsWith("/sansu/")) return sansuPageTitle;
+  return superAppTitle;
+}
+
+function titleHtmlForKokugoPath(rest: string): string {
+  const path = rest.startsWith("/") ? rest : `/${rest}`;
+  if (path === "/prints/new") return titleNewPrint;
+  if (/\/prints\/[^/]+\/scan/.test(path)) return titleScan;
+  if (path.startsWith("/prints/") && path !== "/prints") return titlePrint;
+  if (path.startsWith("/exercise/")) return titleExercise;
+  if (path.startsWith("/result/")) return titleResult;
+  if (path.startsWith("/remind")) return titleRemind;
+  if (path.startsWith("/settings")) return titleSettings;
+  if (path === "/prints" || path === "/") return titlePrint;
   return brandTitle;
 }

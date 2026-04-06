@@ -43,6 +43,12 @@ func main() {
 		"GET /settings",
 		"GET /exercise/{id}",
 		"GET /result/{id}",
+		"GET /prints",
+		"GET /prints/{path...}",
+		"GET /kokugo",
+		"GET /kokugo/{path...}",
+		"GET /sansu",
+		"GET /sansu/{path...}",
 	}
 	for _, p := range spaPaths {
 		mux.HandleFunc(p, serveSPA)

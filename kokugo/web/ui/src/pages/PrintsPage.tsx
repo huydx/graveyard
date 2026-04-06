@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { listHistory } from "../api/client";
 import RubyHtml from "../components/RubyHtml";
 import { customPrintTitle, exerciseTitleFallbackHtml, isOnlyBareEmptyPrint } from "../lib/printTitle";
+import { paths } from "../lib/paths";
 import * as L from "../lib/uiLabelsRuby";
 import type { AssignmentGroup } from "../types";
 
@@ -51,7 +52,7 @@ export default function PrintsPage() {
           <RubyHtml html={L.printsHeroLead} />
         </p>
         <div className="prints-hero-actions">
-          <Link to="/prints/new" className="btn btn-primary btn-xl prints-link-btn">
+          <Link to={paths.kokugo.printsNew} className="btn btn-primary btn-xl prints-link-btn">
             <RubyHtml html={L.printsNewCta} />
           </Link>
         </div>
@@ -72,7 +73,7 @@ export default function PrintsPage() {
             const custom = customPrintTitle(a);
             return (
               <li key={a.id}>
-                <Link to={`/prints/${encodeURIComponent(a.id)}`} className="print-index-row">
+                <Link to={paths.kokugo.print(a.id)} className="print-index-row">
                   <span className="print-index-title">
                     {custom ? custom : <RubyHtml html={exerciseTitleFallbackHtml(a)} />}
                   </span>

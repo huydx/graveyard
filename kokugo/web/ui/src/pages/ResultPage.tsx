@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { generatePrintSummary, getExercise, getPrintSummary } from "../api/client";
 import RubyHtml from "../components/RubyHtml";
+import { paths } from "../lib/paths";
 import * as L from "../lib/uiLabelsRuby";
 import type { AssignmentExerciseRef, PrintLearningSummary, SubmitResult } from "../types";
 
@@ -66,7 +67,7 @@ export default function ResultPage() {
     <section className="view">
       {printAssignmentId ? (
         <nav className="print-breadcrumb muted">
-          <Link to={`/prints/${encodeURIComponent(printAssignmentId)}`}>
+          <Link to={paths.kokugo.print(printAssignmentId)}>
             <RubyHtml html={L.backToThisPrint} />
           </Link>
         </nav>
@@ -114,13 +115,13 @@ export default function ResultPage() {
           </p>
         )}
         <p>
-          <Link to={`/exercise/${encodeURIComponent(id)}`}>
+          <Link to={paths.kokugo.exercise(id)}>
             <RubyHtml html={L.backToQuestions} />
           </Link>
         </p>
         {nextInPrint ? (
           <p className="result-next-print">
-            <Link to={`/exercise/${encodeURIComponent(nextInPrint.id)}`}>
+            <Link to={paths.kokugo.exercise(nextInPrint.id)}>
               <RubyHtml html={L.nextSectionPractice(nextInPrint.assignmentSort + 1)} />
             </Link>
           </p>
@@ -134,7 +135,7 @@ export default function ResultPage() {
         <p className="muted">
           <RubyHtml html={L.printPointsLeadP1} />
           {printAssignmentId ? (
-            <Link to={`/prints/${encodeURIComponent(printAssignmentId)}`}>
+            <Link to={paths.kokugo.print(printAssignmentId)}>
               <RubyHtml html={L.printPointsLink} />
             </Link>
           ) : (
@@ -198,7 +199,7 @@ export default function ResultPage() {
       </div>
 
       <p>
-        <Link to="/prints">
+        <Link to={paths.kokugo.prints}>
           <RubyHtml html={L.toPrintList} />
         </Link>
       </p>

@@ -4,6 +4,7 @@ import { addExercisePage, deleteExercisePage, ensureScanDraft, getExercise, pars
 import CameraModal from "../components/CameraModal";
 import RubyHtml from "../components/RubyHtml";
 import { useDraftExercise } from "../context/DraftExerciseContext";
+import { paths } from "../lib/paths";
 import * as L from "../lib/uiLabelsRuby";
 
 function imageFilesFromFileList(files: FileList | null): File[] {
@@ -24,7 +25,7 @@ function imageFilesFromDataTransferItems(items: DataTransferItemList | null | un
   return out;
 }
 
-/** Scan is always in context of one print: `/prints/:assignmentId/scan`. */
+/** Scan is always in context of one print: `/kokugo/prints/:assignmentId/scan`. */
 export default function ScanPage() {
   const { assignmentId: rawAid } = useParams<{ assignmentId: string }>();
   const assignmentId = rawAid ? decodeURIComponent(rawAid) : "";
@@ -149,7 +150,7 @@ export default function ScanPage() {
         setUploadStatus(L.draftCleared);
         setThumbRev((r) => r + 1);
         window.setTimeout(() => {
-          navigate(`/prints/${encodeURIComponent(assignmentId)}`);
+          navigate(paths.kokugo.print(assignmentId));
         }, 400);
         return;
       }
@@ -172,14 +173,14 @@ export default function ScanPage() {
       setParseStatus(
         n > 1 ? L.parseDoneSplit(n, pageNote) : L.parseDoneSingle(pageNote)
       );
-      window.setTimeout(() => navigate(`/prints/${encodeURIComponent(assignmentId)}`), 500);
+      window.setTimeout(() => navigate(paths.kokugo.print(assignmentId)), 500);
     } catch (err) {
       setParseStatus(err instanceof Error ? err.message : "エラー");
     }
   };
 
   if (!assignmentId) {
-    return <Navigate to="/prints" replace />;
+    return <Navigate to={paths.kokugo.prints} replace />;
   }
 
   if (bindErr) {
@@ -189,7 +190,7 @@ export default function ScanPage() {
           <p className="status">
             <RubyHtml html={bindErr} />
           </p>
-          <Link to="/prints">
+          <Link to={paths.kokugo.prints}>
             <RubyHtml html={L.toPrintList} />
           </Link>
         </div>
@@ -200,7 +201,7 @@ export default function ScanPage() {
   return (
     <>
       <nav className="print-breadcrumb muted">
-        <Link to={`/prints/${encodeURIComponent(assignmentId)}`}>
+        <Link to={paths.kokugo.print(assignmentId)}>
           <RubyHtml html={L.backToThisPrint} />
         </Link>
       </nav>

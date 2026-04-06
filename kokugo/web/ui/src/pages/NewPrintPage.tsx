@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { createPrint } from "../api/client";
 import RubyHtml from "../components/RubyHtml";
 import { isEnterWithoutIme } from "../lib/keyboard";
+import { paths } from "../lib/paths";
 import * as L from "../lib/uiLabelsRuby";
 
 export default function NewPrintPage() {
@@ -20,7 +21,7 @@ export default function NewPrintPage() {
     setBusy(true);
     try {
       const { assignmentId } = await createPrint({ title: trimmed });
-      navigate(`/prints/${encodeURIComponent(assignmentId)}`);
+      navigate(paths.kokugo.print(assignmentId));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "エラー");
     } finally {
@@ -31,7 +32,7 @@ export default function NewPrintPage() {
   return (
     <section className="view print-new">
       <nav className="print-breadcrumb muted">
-        <Link to="/prints">
+        <Link to={paths.kokugo.prints}>
           <RubyHtml html={L.backPrintList} />
         </Link>
       </nav>
@@ -74,7 +75,7 @@ export default function NewPrintPage() {
           <button type="button" className="btn btn-primary btn-xl" disabled={!canSave} onClick={() => void onSave()}>
             <RubyHtml html={busy ? L.newPrintSaving : L.newPrintSaveBtn} />
           </button>
-          <Link to="/prints" className="btn btn-ghost">
+          <Link to={paths.kokugo.prints} className="btn btn-ghost">
             <RubyHtml html={L.cancelJa} />
           </Link>
         </div>
