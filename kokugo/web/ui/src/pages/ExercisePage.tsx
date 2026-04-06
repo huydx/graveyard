@@ -345,6 +345,8 @@ export default function ExercisePage() {
           </div>
         </article>
 
+        <div className="exercise-question-dock-spacer" aria-hidden="true" />
+
         <article
           className={
             "card question-panel" + (questionsPanelExpanded ? "" : " question-panel--collapsed")
