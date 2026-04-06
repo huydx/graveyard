@@ -1,26 +1,16 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { getHealth } from "../api/client";
-
-function titleForPath(pathname: string): string {
-  if (pathname === "/prints/new") return "あたらしいプリント";
-  if (/\/prints\/[^/]+\/scan/.test(pathname)) return "スキャン";
-  if (pathname.startsWith("/prints/") && pathname !== "/prints") return "プリント";
-  if (pathname.startsWith("/exercise/")) return "れんしゅう";
-  if (pathname.startsWith("/result/")) return "けっか";
-  if (pathname.startsWith("/remind")) return "まいつきおさらい";
-  if (pathname.startsWith("/settings")) return "せってい";
-  if (pathname === "/prints") return "プリント";
-  return "こくごアトリエ";
-}
+import RubyHtml from "../components/RubyHtml";
+import * as L from "../lib/uiLabelsRuby";
 
 const LS_SIDEBAR = "kokugo-sidebar-expanded";
 
 export default function Layout() {
   const location = useLocation();
-  const [badge, setBadge] = useState("AI: せつぞくまち");
+  const [badge, setBadge] = useState(L.badgeAiWaiting);
   const [geminiOk, setGeminiOk] = useState(false);
-  const [childName, setChildName] = useState("がくせい");
+  const [childName, setChildName] = useState("");
   const [sidebarExpanded, setSidebarExpanded] = useState(() => {
     if (typeof window === "undefined") return true;
     return window.localStorage.getItem(LS_SIDEBAR) !== "false";
@@ -38,23 +28,23 @@ export default function Layout() {
     getHealth()
       .then((h) => {
         if (h.geminiConnected) {
-          setBadge("Sensei AI: せつぞくOK");
+          setBadge(L.badgeAiOk);
           setGeminiOk(true);
         } else {
-          setBadge("AI: キーをせっていしてね");
+          setBadge(L.badgeAiKey);
           setGeminiOk(false);
         }
-        if (h.childName) setChildName(h.childName);
+        setChildName(h.childName?.trim() ? h.childName : "");
       })
       .catch(() => {
-        setBadge("API: つづかない");
+        setBadge(L.badgeApiDown);
         setGeminiOk(false);
       });
   }, [location.pathname]);
 
   return (
     <div className={"app-shell" + (sidebarExpanded ? "" : " app-shell--sidebar-collapsed")}>
-      <aside className={"sidebar" + (sidebarExpanded ? "" : " sidebar--collapsed")} aria-label="メインメニュー">
+      <aside className={"sidebar" + (sidebarExpanded ? "" : " sidebar--collapsed")} aria-label={L.ariaMainMenu}>
         {sidebarExpanded ? (
           <>
             <div className="sidebar-collapse-row">
@@ -63,32 +53,36 @@ export default function Layout() {
                 className="sidebar-edge-toggle"
                 onClick={() => setSidebarExpanded(false)}
                 aria-expanded={true}
-                aria-label="左のメニューをしまう（よみこみのスペースをひろげる）"
+                aria-label={L.ariaCollapseSidebar}
               >
                 ⟨
               </button>
             </div>
-            <div className="brand">こくごアトリエ</div>
+            <div className="brand">
+              <RubyHtml html={L.brandTitle} />
+            </div>
             <div className="profile">
               <div className="avatar" aria-hidden="true">
                 🐦
               </div>
               <div className="profile-text">
-                <span>{childName}</span>
-                <small>がんばっているよ</small>
+                <span>{childName ? childName : <RubyHtml html={L.defaultStudentName} />}</span>
+                <small>
+                  <RubyHtml html={L.profileCheer} />
+                </small>
               </div>
             </div>
             <nav className="nav nav-prints-only">
               <NavLink to="/prints" className={({ isActive }) => "nav-btn nav-btn-main" + (isActive ? " active" : "")}>
-                プリント
+                <RubyHtml html={L.navPrint} />
               </NavLink>
             </nav>
             <div className="sidebar-secondary">
               <Link to="/remind" className="sidebar-secondary-link">
-                まいつきおさらい
+                <RubyHtml html={L.navMonthlyReview} />
               </Link>
               <Link to="/settings" className="sidebar-secondary-link">
-                せってい
+                <RubyHtml html={L.navSettings} />
               </Link>
             </div>
           </>
@@ -98,7 +92,7 @@ export default function Layout() {
             className="sidebar-edge-toggle sidebar-edge-toggle--expand"
             onClick={() => setSidebarExpanded(true)}
             aria-expanded={false}
-            aria-label="メニューをひらく"
+            aria-label={L.ariaExpandSidebar}
           >
             ⟩
           </button>
@@ -106,8 +100,10 @@ export default function Layout() {
       </aside>
       <main className="main">
         <header className="topbar">
-          <span className={"badge" + (geminiOk ? " ok" : "")}>{badge}</span>
-          <h1>{titleForPath(location.pathname)}</h1>
+          <span className={"badge" + (geminiOk ? " ok" : "")}>
+            <RubyHtml html={badge} />
+          </span>
+          <RubyHtml as="h1" html={L.titleHtmlForPath(location.pathname)} />
         </header>
         <Outlet context={{ childName }} />
       </main>

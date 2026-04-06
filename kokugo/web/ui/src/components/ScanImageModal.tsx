@@ -1,4 +1,6 @@
 import { useEffect } from "react";
+import RubyHtml from "./RubyHtml";
+import * as L from "../lib/uiLabelsRuby";
 
 type Props = {
   exerciseId: string;
@@ -49,17 +51,16 @@ export default function ScanImageModal({
       className="scan-image-modal-overlay"
       role="dialog"
       aria-modal="true"
-      aria-label={`スキャン ページ ${pageIndex + 1}`}
+      aria-label={L.scanModalAria(pageIndex)}
       onClick={onClose}
     >
       <div className="scan-image-modal" onClick={(e) => e.stopPropagation()}>
         <div className="scan-image-modal-head">
           <span className="scan-image-modal-title">
-            ページ {pageIndex + 1}
-            {totalPages > 1 ? ` / ${totalPages}` : ""}
+            <RubyHtml html={L.pageTitleModal(pageIndex, totalPages)} />
           </span>
           <button type="button" className="btn btn-ghost scan-image-modal-close" onClick={onClose}>
-            とじる
+            <RubyHtml html={L.closeJa} />
           </button>
         </div>
         <div className="scan-image-modal-body">
@@ -67,7 +68,7 @@ export default function ScanImageModal({
             <button
               type="button"
               className="scan-image-modal-nav scan-image-modal-nav-prev"
-              aria-label="まえのページ"
+              aria-label={L.ariaPrevPage}
               disabled={pageIndex <= 0}
               onClick={() => onChangePage(pageIndex - 1)}
             >
@@ -84,7 +85,7 @@ export default function ScanImageModal({
             <button
               type="button"
               className="scan-image-modal-nav scan-image-modal-nav-next"
-              aria-label="つぎのページ"
+              aria-label={L.ariaNextPage}
               disabled={pageIndex >= totalPages - 1}
               onClick={() => onChangePage(pageIndex + 1)}
             >

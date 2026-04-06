@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import RubyHtml from "./RubyHtml";
+import * as L from "../lib/uiLabelsRuby";
 
 type Props = {
   open: boolean;
@@ -42,7 +44,7 @@ export default function CameraModal({ open, onClose, onCapture }: Props) {
         }
         setReady(true);
       } catch {
-        setErr("カメラをつかえません。https:// または「カメラでとる」をためしてください。");
+        setErr(L.cameraErr);
       }
     })();
     return () => {
@@ -82,27 +84,33 @@ export default function CameraModal({ open, onClose, onCapture }: Props) {
   if (!open) return null;
 
   return (
-    <div className="camera-modal-overlay" role="dialog" aria-modal="true" aria-label="カメラ">
+    <div className="camera-modal-overlay" role="dialog" aria-modal="true" aria-label={L.cameraModalAria}>
       <div className="camera-modal">
         <div className="camera-modal-head">
-          <h3>プリントをうつす</h3>
+          <h3>
+            <RubyHtml html={L.cameraShootTitle} />
+          </h3>
           <button type="button" className="btn btn-ghost camera-close" onClick={close}>
-            とじる
+            <RubyHtml html={L.closeJa} />
           </button>
         </div>
         {err ? (
-          <p className="status camera-err">{err}</p>
+          <p className="status camera-err">
+            <RubyHtml html={err} />
+          </p>
         ) : (
           <>
             <video ref={videoRef} className="camera-video" playsInline muted autoPlay />
-            <p className="muted camera-hint">{ready ? "シャッターをおす" : "カメラをよみこみちゅう…"}</p>
+            <p className="muted camera-hint">
+              <RubyHtml html={ready ? L.shutterPress : L.cameraLoading} />
+            </p>
             <button
               type="button"
               className="btn btn-primary btn-xl btn-block camera-shutter"
               onClick={shutter}
               disabled={!ready}
             >
-              📷 シャッター
+              <RubyHtml html={L.shutterBtn} />
             </button>
           </>
         )}

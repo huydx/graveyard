@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { getAppSettings, getHealth, getOllamaCheck, putAppSettings } from "../api/client";
+import RubyHtml from "../components/RubyHtml";
+import * as L from "../lib/uiLabelsRuby";
 
 const backendOptions = (
   <>
-    <option value="">環境変数の既定（個別変数 → KOKUGO_CHAT_BACKEND、未設定時は gemini）</option>
-    <option value="gemini">gemini（要 API キー：DB または環境変数）</option>
-    <option value="ollama">ollama（OLLAMA_CHAT_MODEL / OLLAMA_MODEL）</option>
+    <option value="">{L.settingsBackendOptEnvPlain}</option>
+    <option value="gemini">{L.settingsBackendOptGeminiPlain}</option>
+    <option value="ollama">{L.settingsBackendOptOllamaPlain}</option>
   </>
 );
 
@@ -144,16 +146,17 @@ export default function SettingsPage() {
   return (
     <section className="view">
       <div className="card settings-card">
-        <h2>せってい（このパソコンに保存）</h2>
+        <h2>
+          <RubyHtml html={L.settingsHead} />
+        </h2>
         <p className="muted small-gap">
-          プリントの読み取りは <strong>Gemini 3</strong>（環境変数 <code>GEMINI_MODEL</code>、既定{" "}
-          <code>gemini-3-flash-preview</code>）のワンショット解析のみです。まとめ・採点は Gemini か Ollama
-          を別々に選べます。API キーはここか <code>GOOGLE_API_KEY</code> で指定します（DB
-          に値があるときはそちらが優先）。
+          <RubyHtml html={L.settingsIntro} />
         </p>
 
         <div className="settings-field">
-          <label htmlFor="ollama-url">Ollama サーバー（URL）</label>
+          <label htmlFor="ollama-url">
+            <RubyHtml html={L.labelOllamaServer} />
+          </label>
           <div className="settings-inline-row">
             <input
               id="ollama-url"
@@ -170,14 +173,18 @@ export default function SettingsPage() {
               onClick={checkOllama}
               disabled={ollamaCheckLoading || ollamaListFetching}
             >
-              {ollamaCheckLoading ? "確認中…" : "接続確認"}
+              <RubyHtml html={ollamaCheckLoading ? L.checkingBusy : L.btnConnectionCheck} />
             </button>
           </div>
           {ollamaListFetching ? (
-            <p className="muted tiny-hint">Ollama（/api/tags）からモデル一覧を取得しています…</p>
+            <p className="muted tiny-hint">
+              <RubyHtml html={L.ollamaFetchingModels} />
+            </p>
           ) : null}
           {envHint.url ? (
-            <p className="muted tiny-hint">環境変数の既定: {envHint.url}</p>
+            <p className="muted tiny-hint">
+              <RubyHtml html={L.envDefaultLabel} /> {envHint.url}
+            </p>
           ) : null}
           {ollamaCheckDetail ? (
             <p className={ollamaCheckOk ? "ok-text tiny-hint" : "error-text tiny-hint"}>{ollamaCheckDetail}</p>
@@ -185,34 +192,36 @@ export default function SettingsPage() {
         </div>
 
         <div className="settings-field">
-          <label htmlFor="ollama-chat-model">チャット用モデル（まとめ・採点で ollama を選んだとき）</label>
+          <label htmlFor="ollama-chat-model">
+            <RubyHtml html={L.labelChatModel} />
+          </label>
           <select
             id="ollama-chat-model"
             className="input-select"
             value={ollamaChatModel}
             onChange={(e) => setOllamaChatModel(e.target.value)}
           >
-            <option value="">
-              環境変数の既定（OLLAMA_CHAT_MODEL → OLLAMA_MODEL
-              {envHint.ollamaChatModel ? ` — いまは ${envHint.ollamaChatModel}` : ""}）
-            </option>
+            <option value="">{L.settingsOptEnvOllamaPlain(envHint.ollamaChatModel || undefined)}</option>
             {ollamaModelsList.map((name) => (
               <option key={`chat-${name}`} value={name}>
                 {name}
               </option>
             ))}
             {ollamaChatModel !== "" && !ollamaModelsList.includes(ollamaChatModel) ? (
-              <option value={ollamaChatModel}>{ollamaChatModel}（保存中・一覧に未反映）</option>
+              <option value={ollamaChatModel}>{L.settingsOptSavingPlain(ollamaChatModel)}</option>
             ) : null}
           </select>
           <p className="muted tiny-hint">
-            いまの有効モデル名: {effectiveOllamaChat || "（未設定）"}
-            。開いたときに Ollama から一覧を取ります。URL を変えたあとは「接続確認」で取り直せます。
+            <RubyHtml html={L.effectiveModelHint} />{" "}
+            {effectiveOllamaChat ? effectiveOllamaChat : <RubyHtml html={L.unsetParen} />}
+            <RubyHtml html={L.openOllamaListHint} />
           </p>
         </div>
 
         <div className="settings-field">
-          <label htmlFor="summary-backend">まとめ・音声の文字おこし</label>
+          <label htmlFor="summary-backend">
+            <RubyHtml html={L.labelSummaryBackend} />
+          </label>
           <select
             id="summary-backend"
             className="input-select"
@@ -221,14 +230,19 @@ export default function SettingsPage() {
           >
             {backendOptions}
           </select>
-          <p className="muted tiny-hint">いまの有効値: {effectiveSummary}（文字おこしは Gemini のときだけ可）</p>
+          <p className="muted tiny-hint">
+            <RubyHtml html={L.effectiveValueHint} /> {effectiveSummary}
+            <RubyHtml html={L.transcribeGeminiOnly} />
+          </p>
           {envHint.summary ? (
             <p className="muted tiny-hint">環境: KOKUGO_CHAT_BACKEND_SUMMARY / KOKUGO_CHAT_BACKEND: {envHint.summary}</p>
           ) : null}
         </div>
 
         <div className="settings-field">
-          <label htmlFor="judge-backend">解答の採点</label>
+          <label htmlFor="judge-backend">
+            <RubyHtml html={L.labelJudgeBackend} />
+          </label>
           <select
             id="judge-backend"
             className="input-select"
@@ -237,20 +251,24 @@ export default function SettingsPage() {
           >
             {backendOptions}
           </select>
-          <p className="muted tiny-hint">いまの有効値: {effectiveJudge}</p>
+          <p className="muted tiny-hint">
+            <RubyHtml html={L.effectiveValueHint} /> {effectiveJudge}
+          </p>
           {envHint.judge ? (
             <p className="muted tiny-hint">環境: KOKUGO_CHAT_BACKEND_JUDGE / KOKUGO_CHAT_BACKEND: {envHint.judge}</p>
           ) : null}
         </div>
 
         <div className="settings-field">
-          <label htmlFor="gemini-key">Google Gemini API キー</label>
+          <label htmlFor="gemini-key">
+            <RubyHtml html={L.labelGeminiKey} />
+          </label>
           <input
             id="gemini-key"
             type="password"
             className="input-select"
             autoComplete="off"
-            placeholder={hasGeminiKey ? "（保存済み・あたらしいキーで上書き）" : "プリント読み取り・Gemini 利用に必要"}
+            placeholder={hasGeminiKey ? L.placeholderKeySavedPlain : L.placeholderKeyNeededPlain}
             value={geminiKey}
             onChange={(e) => setGeminiKey(e.target.value)}
             disabled={clearGeminiKey}
@@ -261,15 +279,15 @@ export default function SettingsPage() {
               checked={clearGeminiKey}
               onChange={(e) => setClearGeminiKey(e.target.checked)}
             />
-            保存したキーを消す（環境変数のキーに戻す）
+            <RubyHtml html={L.clearSavedKey} />
           </label>
           <p className="muted tiny-hint">
-            {hasGeminiKey
-              ? "データベースにキーが保存されています（内容は表示しません）。"
-              : "データベースにはキーがありません（空なら環境変数 GOOGLE_API_KEY を使います）。"}
-            {geminiKeyEffective
-              ? " いまの設定では Gemini 用のキーが利用可能です。"
-              : " いまの設定では Gemini 用のキーがありません。"}
+            {hasGeminiKey ? (
+              <RubyHtml html={L.dbHasKey} />
+            ) : (
+              <RubyHtml html={L.dbNoKey} />
+            )}
+            {geminiKeyEffective ? <RubyHtml html={L.geminiKeyAvailable} /> : <RubyHtml html={L.geminiKeyMissing} />}
           </p>
         </div>
 
@@ -277,9 +295,13 @@ export default function SettingsPage() {
 
         <div className="settings-actions">
           <button type="button" className="btn btn-primary" onClick={() => void save()} disabled={status === "saving"}>
-            {status === "saving" ? "ほぞんちゅう…" : "ほぞんして反映"}
+            <RubyHtml html={status === "saving" ? L.newPrintSaving : L.saveApply} />
           </button>
-          {status === "saved" ? <span className="ok-text">✓ 反映しました</span> : null}
+          {status === "saved" ? (
+            <span className="ok-text">
+              <RubyHtml html={L.savedOk} />
+            </span>
+          ) : null}
         </div>
       </div>
     </section>

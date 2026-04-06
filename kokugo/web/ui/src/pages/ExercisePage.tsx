@@ -15,6 +15,7 @@ import { useMediaRecorderAnswer } from "../hooks/useMediaRecorderAnswer";
 import ScanImageModal from "../components/ScanImageModal";
 import RubyHtml, { PassageRuby } from "../components/RubyHtml";
 import { furiganaToSpeechText } from "../lib/ruby";
+import * as L from "../lib/uiLabelsRuby";
 import type { AssignmentExerciseRef, Question, QuestionCheckResult } from "../types";
 
 const MAX_VOICE_RECORD_MS = 10_000;
@@ -71,7 +72,7 @@ export default function ExercisePage() {
     if (!id) return;
     getExercise(id)
       .then((d) => {
-        setTitle(d.exercise.title || "（だいもくなし）");
+        setTitle(d.exercise.title || L.exerciseDefaultTitle);
         setPassage(d.exercise.passage || "");
         setQuestions(d.questions || []);
         setAnswers({});
@@ -278,12 +279,16 @@ export default function ExercisePage() {
     <section className="view">
       {printAssignmentId ? (
         <nav className="print-breadcrumb muted">
-          <Link to={`/prints/${encodeURIComponent(printAssignmentId)}`}>← このプリントにもどる</Link>
+          <Link to={`/prints/${encodeURIComponent(printAssignmentId)}`}>
+            <RubyHtml html={L.backToThisPrint} />
+          </Link>
         </nav>
       ) : null}
       {assignmentSiblings.length > 0 && (
-        <div className="card assignment-sibling-bar" aria-label="このプリントのほかのだい">
-          <p className="muted assignment-sibling-label">このプリントのだいをきりかえ</p>
+        <div className="card assignment-sibling-bar" aria-label={L.ariaSiblingSections}>
+          <p className="muted assignment-sibling-label">
+            <RubyHtml html={L.switchSectionLabel} />
+          </p>
           <div className="assignment-sibling-chips">
             {assignmentSiblings.map((s) => (
               <button
@@ -313,13 +318,13 @@ export default function ExercisePage() {
               <RubyHtml html={title} />
             </h2>
             <button type="button" className="btn btn-ghost" onClick={readPassage}>
-              よみあげ
+              <RubyHtml html={L.readAloud} />
             </button>
           </div>
           {scanPageCount > 0 && (
             <div className="scan-page-strip exercise-scan-strip" aria-label="スキャンしたページ">
               <p className="muted scan-page-count">
-                {scanPageCount} まいのプリント（サムネをタップでおおきくみる）
+                <RubyHtml html={L.scanPagesLabel(scanPageCount)} />
               </p>
               <div className="scan-thumbs">
                 {Array.from({ length: scanPageCount }, (_, i) => (
@@ -327,7 +332,7 @@ export default function ExercisePage() {
                     key={i}
                     type="button"
                     className="scan-thumb-btn"
-                    aria-label={`ページ ${i + 1} をおおきくひょうじ`}
+                    aria-label={L.ariaEnlargePage(i)}
                     onClick={() => setScanModalIndex(i)}
                   >
                     <img
@@ -358,20 +363,20 @@ export default function ExercisePage() {
               className="question-panel-toggle"
               onClick={() => setQuestionsPanelExpanded((v) => !v)}
               aria-expanded={questionsPanelExpanded}
-              aria-label={
-                questionsPanelExpanded
-                  ? "もんだいパネルをしまう（よみこみをひろげる）"
-                  : "もんだいパネルをひらく"
-              }
+              aria-label={questionsPanelExpanded ? L.ariaQuestionPanelClose : L.ariaQuestionPanelOpen}
             >
               {questionsPanelExpanded ? (
                 <>
                   <span aria-hidden>⟨</span>
-                  <span className="question-panel-toggle-label">しまう</span>
+                  <span className="question-panel-toggle-label">
+                    <RubyHtml html={L.panelClose} />
+                  </span>
                 </>
               ) : (
                 <>
-                  <span className="question-panel-toggle-collapsed-title">もんだい</span>
+                  <span className="question-panel-toggle-collapsed-title">
+                    <RubyHtml html={L.panelCollapsedTitle} />
+                  </span>
                   {questions.length > 0 ? (
                     <span className="question-panel-toggle-progress">
                       {qIdx + 1}/{questions.length}
@@ -386,12 +391,14 @@ export default function ExercisePage() {
           </div>
           <div className="question-panel-inner">
           {!questions.length ? (
-            <p className="q-prompt">もんだいがありません。スキャンをやりなおしてください。</p>
+            <p className="q-prompt">
+              <RubyHtml html={L.noQuestionsRescan} />
+            </p>
           ) : (
             <>
               <div className="q-meta">
                 <span>
-                  もんだい {qIdx + 1} / {questions.length}
+                  <RubyHtml html={L.questionProgress(qIdx + 1, questions.length)} />
                 </span>
                 <span className="muted" />
               </div>
@@ -399,133 +406,158 @@ export default function ExercisePage() {
                 <RubyHtml html={q.prompt} />
               </p>
 
-              {q.type === "choice" ? (
-                <div className="choice-grid">
-                  {(q.options || []).map((opt, i) => {
-                    const lab = String.fromCharCode(65 + i);
-                    const sel = answers[q.id] === opt;
-                    return (
-                      <button
-                        key={i}
-                        type="button"
-                        className={"choice-btn" + (sel ? " selected" : "")}
-                        onClick={() => setAnswer(q.id, opt)}
-                      >
-                        <span className="choice-label">{lab}</span>{" "}
-                        <RubyHtml html={opt} />
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="voice-area">
-                  {needsHTTPSForMic && (
-                    <div className="voice-https-banner" role="status">
-                      <strong>マイクには https がひつようです</strong>
-                      <p>
-                        いま <code>http://</code> なので録音できません。アプリのPCで次を実行し、表示された{" "}
-                        <code>https://…ts.net</code> でひらきなおしてください。
-                      </p>
-                      <pre className="cmd-snippet">tailscale serve https / http://127.0.0.1:8787</pre>
-                      <p className="muted">くわしくは README の「iPadでマイク（HTTPS）」</p>
+              <div className="question-interaction-body">
+                <div className="question-interaction-main">
+                  {q.type === "choice" ? (
+                    <div className="choice-grid">
+                      {(q.options || []).map((opt, i) => {
+                        const lab = String.fromCharCode(65 + i);
+                        const sel = answers[q.id] === opt;
+                        return (
+                          <button
+                            key={i}
+                            type="button"
+                            className={"choice-btn" + (sel ? " selected" : "")}
+                            onClick={() => setAnswer(q.id, opt)}
+                          >
+                            <span className="choice-label">{lab}</span>{" "}
+                            <RubyHtml html={opt} />
+                          </button>
+                        );
+                      })}
                     </div>
-                  )}
-                  <div
-                    className={
-                      "mic-btn-wrap" + (showMicHoldAnimation ? " mic-btn-wrap--recording" : "")
-                    }
-                  >
-                    {showMicHoldAnimation && (
-                      <div className="mic-orbit-layer" aria-hidden>
-                        <span className="mic-orbit-ring" />
-                        <span className="mic-orbit-arm">
-                          <span className="mic-orbit-dot" />
-                        </span>
-                        <span className="mic-orbit-arm mic-orbit-arm--lag">
-                          <span className="mic-orbit-dot mic-orbit-dot--secondary" />
-                        </span>
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      className={"mic-btn" + (micActive ? " listening" : "")}
-                      aria-label={
-                        shouldUseBrowserSpeechRecognition()
-                          ? "マイク"
-                          : deviceRecording
-                            ? "録音ちゅう（はなすとおわる）"
-                            : "マイクをおさえて録音"
-                      }
-                      disabled={voiceBusy || (needsHTTPSForMic && !deviceRecording)}
-                      onClick={shouldUseBrowserSpeechRecognition() ? () => onMic() : undefined}
-                      onPointerDown={shouldUseBrowserSpeechRecognition() ? undefined : onMicPointerDown}
-                      onPointerUp={shouldUseBrowserSpeechRecognition() ? undefined : onMicPointerEnd}
-                      onPointerCancel={shouldUseBrowserSpeechRecognition() ? undefined : onMicPointerEnd}
-                      onContextMenu={shouldUseBrowserSpeechRecognition() ? undefined : (ev) => ev.preventDefault()}
-                    >
-                      🎤
-                    </button>
-                  </div>
-                  <p className="muted">
-                    {shouldUseBrowserSpeechRecognition()
-                      ? "マイクをおす（ブラウザの音声入力）"
-                      : deviceRecording
-                        ? "指をはなすとおわります（さいちょう 10 びょう）"
-                        : voiceBusy
-                          ? "文字おこしちゅう…"
-                          : "マイクをおさえっぱなしで録音、はなすとおわり（さいちょう 10 びょう）"}
-                  </p>
-                  {!shouldUseBrowserSpeechRecognition() && (
-                    <p className="muted voice-hint-ios">
-                      iPad/iPhone ではブラウザの音声入力がつかえないことが多いので、録音したあとサーバー（Gemini）が文字におこします。
-                    </p>
-                  )}
-                  <p className="voice-text">
-                    <RubyHtml html={answers[q.id] || ""} />
-                  </p>
-                </div>
-              )}
-
-              {scorable && (
-                <div className="q-check-row">
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-lg"
-                    disabled={checkBusy}
-                    onClick={() => void onCheckAnswer()}
-                  >
-                    {checkBusy ? "かくにんちゅう…" : "こたえをかくにん"}
-                  </button>
-                  {!check && <span className="muted">せいかいかどうと、コメントがでます</span>}
-                </div>
-              )}
-              {scorable && (
-                <div className="q-reveal-block">
-                  {revealedSolutions[q.id] === undefined ? (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-lg q-reveal-btn"
-                      disabled={revealBusy}
-                      onClick={() => void onRevealSolution()}
-                    >
-                      {revealBusy ? "よみこみちゅう…" : "せいかいをみる"}
-                    </button>
                   ) : (
-                    <div className="q-reveal-panel" role="region" aria-label="せいかいの例">
-                      <div className="q-reveal-head">
-                        <span className="q-reveal-label">せいかいの例</span>
-                        <button type="button" className="btn btn-ghost btn-sm" onClick={hideRevealedSolution}>
-                          かくす
-                        </button>
+                    <div className="voice-area">
+                      {needsHTTPSForMic && (
+                        <div className="voice-https-banner" role="status">
+                          <strong>
+                            <RubyHtml html={L.httpsMicNeeded} />
+                          </strong>
+                          <p>
+                            <RubyHtml html={L.httpsMicBody} />
+                          </p>
+                          <pre className="cmd-snippet">tailscale serve https / http://127.0.0.1:8787</pre>
+                          <p className="muted">
+                            <RubyHtml html={L.httpsMicReadmeHint} />
+                          </p>
+                        </div>
+                      )}
+                      <div className="voice-mic-column">
+                        <div
+                          className={
+                            "mic-btn-wrap" + (showMicHoldAnimation ? " mic-btn-wrap--recording" : "")
+                          }
+                        >
+                          {showMicHoldAnimation && (
+                            <div className="mic-orbit-layer" aria-hidden>
+                              <span className="mic-orbit-ring" />
+                              <span className="mic-orbit-arm">
+                                <span className="mic-orbit-dot" />
+                              </span>
+                              <span className="mic-orbit-arm mic-orbit-arm--lag">
+                                <span className="mic-orbit-dot mic-orbit-dot--secondary" />
+                              </span>
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            className={"mic-btn" + (micActive ? " listening" : "")}
+                            aria-label={
+                              shouldUseBrowserSpeechRecognition()
+                                ? L.micAriaBrowser
+                                : deviceRecording
+                                  ? L.micAriaRecording
+                                  : L.micAriaHold
+                            }
+                            disabled={voiceBusy || (needsHTTPSForMic && !deviceRecording)}
+                            onClick={shouldUseBrowserSpeechRecognition() ? () => onMic() : undefined}
+                            onPointerDown={shouldUseBrowserSpeechRecognition() ? undefined : onMicPointerDown}
+                            onPointerUp={shouldUseBrowserSpeechRecognition() ? undefined : onMicPointerEnd}
+                            onPointerCancel={shouldUseBrowserSpeechRecognition() ? undefined : onMicPointerEnd}
+                            onContextMenu={
+                              shouldUseBrowserSpeechRecognition() ? undefined : (ev) => ev.preventDefault()
+                            }
+                          >
+                            🎤
+                          </button>
+                        </div>
+                        <p className="muted voice-mic-hint">
+                          <RubyHtml
+                            html={
+                              shouldUseBrowserSpeechRecognition()
+                                ? L.micHintBrowser
+                                : deviceRecording
+                                  ? L.micHintRelease
+                                  : voiceBusy
+                                    ? L.transcribing
+                                    : L.micHintHold
+                            }
+                          />
+                        </p>
+                        {!shouldUseBrowserSpeechRecognition() && (
+                          <p className="muted voice-hint-ios">
+                            <RubyHtml html={L.micHintIos} />
+                          </p>
+                        )}
                       </div>
-                      <div className="q-reveal-body">
-                        <RubyHtml html={revealedSolutions[q.id]} />
-                      </div>
+                      <p className="voice-text">
+                        <RubyHtml html={answers[q.id] || ""} />
+                      </p>
                     </div>
                   )}
                 </div>
+                {scorable && (
+                  <aside className="question-interaction-actions" aria-label={L.ariaQuestionActions}>
+                    <div className="question-actions-stack">
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-lg question-action-btn"
+                        disabled={checkBusy}
+                        onClick={() => void onCheckAnswer()}
+                      >
+                        <RubyHtml html={checkBusy ? L.checkAnswerBusy : L.checkAnswer} />
+                      </button>
+                      {!check && (
+                        <p className="muted question-check-hint">
+                          <RubyHtml html={L.checkHint} />
+                        </p>
+                      )}
+                      {revealedSolutions[q.id] === undefined ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-lg question-action-btn q-reveal-btn"
+                          disabled={revealBusy}
+                          onClick={() => void onRevealSolution()}
+                        >
+                          <RubyHtml html={revealBusy ? L.revealBusy : L.revealAnswer} />
+                        </button>
+                      ) : null}
+                    </div>
+                  </aside>
+                )}
+              </div>
+              {scorable && revealedSolutions[q.id] !== undefined && (
+                <div className="q-reveal-block q-reveal-block--below-actions">
+                  <div className="q-reveal-panel" role="region" aria-label={L.ariaRevealRegion}>
+                    <div className="q-reveal-head">
+                      <span className="q-reveal-label">
+                        <RubyHtml html={L.revealLabel} />
+                      </span>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={hideRevealedSolution}>
+                        <RubyHtml html={L.hideJa} />
+                      </button>
+                    </div>
+                    <div className="q-reveal-body">
+                      <RubyHtml html={revealedSolutions[q.id]} />
+                    </div>
+                  </div>
+                </div>
               )}
-              {!scorable && <p className="muted q-scorable-skip">じどうさいてんのたいしょうがいです。つぎへすすんでOKです。</p>}
+              {!scorable && (
+                <p className="muted q-scorable-skip">
+                  <RubyHtml html={L.skipAutoScore} />
+                </p>
+              )}
               {check && (
                 <div
                   className={
@@ -533,7 +565,9 @@ export default function ExercisePage() {
                   }
                   role="status"
                 >
-                  <strong>{check.isCorrect ? "せいかい" : "ざんねん"}</strong>
+                  <strong>
+                    <RubyHtml html={check.isCorrect ? L.correctJa : L.wrongJa} />
+                  </strong>
                   <div>
                     <RubyHtml html={check.feedback} />
                   </div>
@@ -547,7 +581,7 @@ export default function ExercisePage() {
                   disabled={qIdx <= 0}
                   onClick={() => setQIdx((i) => i - 1)}
                 >
-                  まえ
+                  <RubyHtml html={L.prevJa} />
                 </button>
                 <button
                   type="button"
@@ -555,11 +589,11 @@ export default function ExercisePage() {
                   disabled={qIdx >= questions.length - 1}
                   onClick={() => setQIdx((i) => i + 1)}
                 >
-                  つぎ
+                  <RubyHtml html={L.nextJa} />
                 </button>
               </div>
               <button type="button" className="btn btn-primary btn-xl btn-block" onClick={onSubmit}>
-                すべてのこたえをおくる
+                <RubyHtml html={L.submitAll} />
               </button>
             </>
           )}

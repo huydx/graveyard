@@ -9,6 +9,7 @@ import {
   exerciseTitleFallbackHtml,
   isOnlyBareEmptyPrint,
 } from "../lib/printTitle";
+import * as L from "../lib/uiLabelsRuby";
 import type { AssignmentGroup, Exercise, PrintLearningSummary } from "../types";
 
 function primaryOf(a: AssignmentGroup): Exercise | undefined {
@@ -154,8 +155,12 @@ export default function PrintDetailPage() {
   if (!assignmentId) {
     return (
       <div className="card">
-        <p className="status">IDが不正です</p>
-        <Link to="/prints">プリント一覧へ</Link>
+        <p className="status">
+          <RubyHtml html={L.invalidId} />
+        </p>
+        <Link to="/prints">
+          <RubyHtml html={L.toPrintList} />
+        </Link>
       </div>
     );
   }
@@ -164,7 +169,9 @@ export default function PrintDetailPage() {
     return (
       <div className="card">
         <p className="status">{err}</p>
-        <Link to="/prints">プリント一覧へ</Link>
+        <Link to="/prints">
+          <RubyHtml html={L.toPrintList} />
+        </Link>
       </div>
     );
   }
@@ -172,7 +179,9 @@ export default function PrintDetailPage() {
   if (!print) {
     return (
       <div className="card">
-        <p className="muted">よみこみちゅう…</p>
+        <p className="muted">
+          <RubyHtml html={L.loadingDots} />
+        </p>
       </div>
     );
   }
@@ -198,13 +207,15 @@ export default function PrintDetailPage() {
   return (
     <section className="view print-detail">
       <nav className="print-breadcrumb muted">
-        <Link to="/prints">← プリント一覧</Link>
+        <Link to="/prints">
+          <RubyHtml html={L.backPrintList} />
+        </Link>
       </nav>
 
       <div className="card print-detail-head">
         <div className="print-title-field">
           <label htmlFor="print-title-input" className="print-title-label">
-            このプリントのなまえ（わかりやすく）
+            <RubyHtml html={L.printDetailTitleLabel} />
           </label>
           <input
             id="print-title-input"
@@ -224,21 +235,25 @@ export default function PrintDetailPage() {
             autoComplete="off"
             enterKeyHint="done"
           />
-          {titleSaving ? <p className="muted print-title-saving">ほぞんちゅう…</p> : null}
+          {titleSaving ? (
+            <p className="muted print-title-saving">
+              <RubyHtml html={L.printTitleSaving} />
+            </p>
+          ) : null}
           {titleErr ? <p className="status">{titleErr}</p> : null}
           {!titleEdit.trim() && print.exercises?.length && !onlyBareEmpty ? (
             <p className="muted print-title-fallback-preview">
-              なまえを空けたときのひょうじ: <RubyHtml html={exerciseTitleFallbackHtml(print)} />
+              <RubyHtml html={L.emptyNamePreviewLabel} /> <RubyHtml html={exerciseTitleFallbackHtml(print)} />
             </p>
           ) : null}
         </div>
         <p className="muted print-detail-meta">
           {onlyBareEmpty ? (
-            <>つくったばかり · まだもんだいはありません</>
+            <RubyHtml html={L.metaJustCreated} />
           ) : (
             <>
-              {formatWhen(print.createdAt)} · {print.exercises.length} だい
-              {hasParsed ? ` · れんしゅう ${doneCount}/${print.exercises.length} おわり` : null}
+              {formatWhen(print.createdAt)} · <RubyHtml html={L.metaSectionCount(print.exercises.length)} />
+              {hasParsed ? <RubyHtml html={L.metaPracticeProgress(doneCount, print.exercises.length)} /> : null}
             </>
           )}
         </p>
@@ -246,15 +261,15 @@ export default function PrintDetailPage() {
 
         <div className="print-detail-actions">
           <button type="button" className="btn btn-primary btn-xl" onClick={goScan} disabled={!primary}>
-            {onlyBareEmpty
-              ? "プリントをスキャンする"
-              : hasParsed
-                ? "画像をスキャン（だいをついか）"
-                : "画像をスキャン（だいをつくる）"}
+            <RubyHtml
+              html={
+                onlyBareEmpty ? L.scanPrintCta : hasParsed ? L.scanAddPagesCta : L.scanNewSectionCta
+              }
+            />
           </button>
           {hasParsed ? (
             <button type="button" className="btn btn-secondary btn-xl" onClick={startPracticeForPrint}>
-              このプリントのれんしゅう
+              <RubyHtml html={L.practiceThisPrint} />
             </button>
           ) : null}
           <button
@@ -263,15 +278,19 @@ export default function PrintDetailPage() {
             disabled={deletingId !== null || !primary}
             onClick={() => void removeWhole()}
           >
-            このプリントを削除
+            <RubyHtml html={L.deleteThisPrint} />
           </button>
         </div>
       </div>
 
       {hasParsed && !onlyBareEmpty ? (
         <div className="card print-summary-card">
-          <h3 className="prints-subhead">プリントぜんたいのまとめ</h3>
-          <p className="muted">すべてのだいをまとめて、おぼえておきたいことばやポイント（最大10）をつくります。</p>
+          <h3 className="prints-subhead">
+            <RubyHtml html={L.printWholeSummaryHead} />
+          </h3>
+          <p className="muted">
+            <RubyHtml html={L.printWholeSummaryLead} />
+          </p>
           {summaryErr ? <p className="status">{summaryErr}</p> : null}
           {!printSummary && !summaryErr ? (
             <button
@@ -280,7 +299,7 @@ export default function PrintDetailPage() {
               onClick={() => void onGenPrintSummary()}
               disabled={summaryLoading}
             >
-              {summaryLoading ? "つくっている…" : "AIでまとめをつくる"}
+              <RubyHtml html={summaryLoading ? L.makingSummary : L.aiMakeSummary} />
             </button>
           ) : null}
           {printSummary ? (
@@ -292,7 +311,9 @@ export default function PrintDetailPage() {
               ) : null}
               {printSummary.keyword_cards?.length ? (
                 <>
-                  <h4 className="print-summary-kw-head">ことば・ポイント</h4>
+                  <h4 className="print-summary-kw-head">
+                    <RubyHtml html={L.wordsPoints} />
+                  </h4>
                   <ul className="print-summary-kw-list">
                     {printSummary.keyword_cards.map((row, i) => (
                       <li key={i} className="print-summary-card-row">
@@ -316,7 +337,7 @@ export default function PrintDetailPage() {
                   onClick={() => void onGenPrintSummary()}
                   disabled={summaryLoading}
                 >
-                  {summaryLoading ? "つくりなおしちゅう…" : "まとめをつくりなおす"}
+                  <RubyHtml html={summaryLoading ? L.regenSummaryBusy : L.regenSummary} />
                 </button>
               </p>
             </div>
@@ -326,34 +347,39 @@ export default function PrintDetailPage() {
 
       {onlyBareEmpty ? (
         <div className="card print-empty-card">
-          <h3 className="prints-subhead print-empty-head">つぎのステップ</h3>
+          <h3 className="prints-subhead print-empty-head">
+            <RubyHtml html={L.nextStepsHead} />
+          </h3>
           <p className="print-empty-lead">
-            いまは<strong>もんだい</strong>がまだありません。上のボタンでプリントの<strong>写真</strong>をいれて、AIに
-            <strong>よみとって</strong>もらうと、<strong>だい</strong>がここに列ばされます。
+            <RubyHtml html={L.emptyPrintLead} />
           </p>
         </div>
       ) : (
         <div className="card">
-          <h3 className="prints-subhead">だいのいちらん</h3>
+          <h3 className="prints-subhead">
+            <RubyHtml html={L.sectionListHead} />
+          </h3>
           <p className="muted">
-            れんしゅうは「このプリントのれんしゅう」か、下の<strong>だい</strong>からはじめられます。
+            <RubyHtml html={L.sectionListHint} />
           </p>
           <ul className="history-list">
             {print.exercises.map((ex, i) => (
               <li key={ex.id} className="history-row history-nested-row">
                 <button type="button" className="history-row-main" onClick={() => openExercise(ex)}>
-                  <span className="muted">だい {i + 1}</span>{" "}
-                  <RubyHtml html={exerciseRowTitleHtml(ex)} /> — {exerciseStatusJa(ex.status)}
+                  <span className="muted">
+                    <RubyHtml html={L.sectionChip(i)} />
+                  </span>{" "}
+                  <RubyHtml html={exerciseRowTitleHtml(ex)} /> — <RubyHtml html={exerciseStatusJa(ex.status)} />
                   {typeof ex.scorePercent === "number" ? ` — ${ex.scorePercent}%` : ""}
                 </button>
                 <button
                   type="button"
                   className="history-row-delete"
-                  aria-label="このだいだけ削除"
+                  aria-label={L.ariaDeleteSection}
                   disabled={deletingId !== null}
                   onClick={() => void removeOne(ex)}
                 >
-                  {deletingId === ex.id ? "…" : "削除"}
+                  {deletingId === ex.id ? "…" : <RubyHtml html={L.deleteKanji} />}
                 </button>
               </li>
             ))}

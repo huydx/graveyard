@@ -1,7 +1,7 @@
 import DOMPurify from "dompurify";
 
 const RUBY_PURIFY: import("dompurify").Config = {
-  ALLOWED_TAGS: ["ruby", "rt", "rp", "br", "span"],
+  ALLOWED_TAGS: ["ruby", "rt", "rp", "br", "span", "strong", "em", "code"],
   ALLOWED_ATTR: ["class"],
 };
 
