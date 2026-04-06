@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createPrint } from "../api/client";
+import RubyHtml from "../components/RubyHtml";
 import { isEnterWithoutIme } from "../lib/keyboard";
+import * as L from "../lib/uiLabelsRuby";
 
 export default function NewPrintPage() {
   const navigate = useNavigate();
@@ -29,18 +31,22 @@ export default function NewPrintPage() {
   return (
     <section className="view print-new">
       <nav className="print-breadcrumb muted">
-        <Link to="/prints">← プリント一覧</Link>
+        <Link to="/prints">
+          <RubyHtml html={L.backPrintList} />
+        </Link>
       </nav>
 
       <div className="card print-new-card">
-        <h2 className="prints-subhead">あたらしいプリント</h2>
+        <h2 className="prints-subhead">
+          <RubyHtml html={L.newPrintHead} />
+        </h2>
         <p className="muted print-new-lead">
-          なまえをいれて<strong>ほぞん</strong>すると、プリントがつくられます（あとからスキャンできます）。
+          <RubyHtml html={L.newPrintLead} />
         </p>
 
         <div className="print-title-field">
           <label htmlFor="new-print-title" className="print-title-label">
-            プリントのなまえ <span className="print-new-required">（ひっすう）</span>
+            <RubyHtml html={L.newPrintLabel} />
           </label>
           <input
             id="new-print-title"
@@ -66,10 +72,10 @@ export default function NewPrintPage() {
 
         <div className="print-new-actions">
           <button type="button" className="btn btn-primary btn-xl" disabled={!canSave} onClick={() => void onSave()}>
-            {busy ? "ほぞんちゅう…" : "ほぞんしてつくる"}
+            <RubyHtml html={busy ? L.newPrintSaving : L.newPrintSaveBtn} />
           </button>
           <Link to="/prints" className="btn btn-ghost">
-            キャンセル
+            <RubyHtml html={L.cancelJa} />
           </Link>
         </div>
       </div>

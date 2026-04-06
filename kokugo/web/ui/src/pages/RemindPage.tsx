@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { monthlyReminders, reviewVocabCard } from "../api/client";
 import RubyHtml from "../components/RubyHtml";
 import { rubyFromWordReading } from "../lib/ruby";
+import * as L from "../lib/uiLabelsRuby";
 import type { VocabCard } from "../types";
 
 export default function RemindPage() {
@@ -42,7 +43,7 @@ export default function RemindPage() {
       <section className="view">
         <div className="card">
           <p className="muted">
-            おさらいのカードがまだありません。プリントの「AIでまとめ」でことばカードがつくられます（れんしゅうのあとでもOK）。
+            <RubyHtml html={L.remindEmpty} />
           </p>
         </div>
       </section>
@@ -62,7 +63,7 @@ export default function RemindPage() {
                 />
               </p>
               <button type="button" className="btn btn-primary btn-xl" onClick={() => setShowBack(true)}>
-                うらがわをみる
+                <RubyHtml html={L.remindFlip} />
               </button>
             </>
           ) : (
@@ -80,7 +81,7 @@ export default function RemindPage() {
                 </div>
               </div>
               <button type="button" className="btn btn-primary btn-lg" onClick={() => void markReviewed()}>
-                おぼえた！
+                <RubyHtml html={L.remindGotIt} />
               </button>
             </>
           )}

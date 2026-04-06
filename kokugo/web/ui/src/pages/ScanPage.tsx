@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { addExercisePage, deleteExercisePage, ensureScanDraft, getExercise, parseExercise } from "../api/client";
 import CameraModal from "../components/CameraModal";
+import RubyHtml from "../components/RubyHtml";
 import { useDraftExercise } from "../context/DraftExerciseContext";
+import * as L from "../lib/uiLabelsRuby";
 
 function imageFilesFromFileList(files: FileList | null): File[] {
   if (!files?.length) return [];
@@ -52,7 +54,7 @@ export default function ScanPage() {
     ensureScanDraft(assignmentId)
       .then(({ exerciseId }) => {
         if (!exerciseId) {
-          setBindErr("このプリントにはスキャン先がありません");
+          setBindErr(L.scanBindErr);
           return;
         }
         setDraftExerciseId(exerciseId);
@@ -69,7 +71,7 @@ export default function ScanPage() {
     getExercise(draftExerciseId)
       .then((d) => {
         if (d.exercise.status !== "draft") {
-          setUploadStatus("スキャン先のよみこみをやりなおしてください（ページを更新）。");
+          setUploadStatus(L.scanReloadHint);
           setShowParse(false);
           setPageCount(d.exercise.imagePaths?.length ?? 0);
           return;
@@ -83,33 +85,28 @@ export default function ScanPage() {
       });
   }, [draftExerciseId]);
 
-  const uploadFiles = useCallback(
-    async (files: File[]) => {
-      const list = files.filter((f) => f.type.startsWith("image/"));
-      if (list.length === 0) return;
-      const exerciseId = draftExerciseIdRef.current;
-      if (!exerciseId) {
-        setUploadStatus("プリントのよみこみをまっています…");
-        return;
+  const uploadFiles = useCallback(async (files: File[]) => {
+    const list = files.filter((f) => f.type.startsWith("image/"));
+    if (list.length === 0) return;
+    const exerciseId = draftExerciseIdRef.current;
+    if (!exerciseId) {
+      setUploadStatus(L.waitingForPrintLoad);
+      return;
+    }
+    try {
+      for (let i = 0; i < list.length; i++) {
+        setUploadStatus(list.length > 1 ? L.uploading(i + 1, list.length) : L.uploadingSingle);
+        const data = await addExercisePage(exerciseId, list[i]);
+        const n = data.imagePaths?.length ?? 0;
+        setPageCount(n);
       }
-      try {
-        for (let i = 0; i < list.length; i++) {
-          setUploadStatus(
-            list.length > 1 ? `あっぷろーどちゅう… (${i + 1}/${list.length})` : "あっぷろーどちゅう…"
-          );
-          const data = await addExercisePage(exerciseId, list[i]);
-          const n = data.imagePaths?.length ?? 0;
-          setPageCount(n);
-        }
-        setUploadStatus("あっぷろーどOK！");
-        setShowParse(true);
-        setThumbRev((r) => r + 1);
-      } catch (err) {
-        setUploadStatus(err instanceof Error ? err.message : "エラー");
-      }
-    },
-    []
-  );
+      setUploadStatus(L.uploadOk);
+      setShowParse(true);
+      setThumbRev((r) => r + 1);
+    } catch (err) {
+      setUploadStatus(err instanceof Error ? err.message : "エラー");
+    }
+  }, []);
 
   const uploadFile = async (f: File) => {
     await uploadFiles([f]);
@@ -141,7 +138,7 @@ export default function ScanPage() {
 
   const onRemovePage = async (pageIndex: number) => {
     if (!draftExerciseId || !assignmentId) return;
-    setUploadStatus("ページをけしています…");
+    setUploadStatus(L.deletingPage);
     try {
       const data = await deleteExercisePage(draftExerciseId, pageIndex);
       if (data.exerciseDeleted) {
@@ -149,7 +146,7 @@ export default function ScanPage() {
         setDraftExerciseId(null);
         setPageCount(0);
         setShowParse(false);
-        setUploadStatus("下書きをけしました");
+        setUploadStatus(L.draftCleared);
         setThumbRev((r) => r + 1);
         window.setTimeout(() => {
           navigate(`/prints/${encodeURIComponent(assignmentId)}`);
@@ -159,7 +156,7 @@ export default function ScanPage() {
       const n = data.imagePaths?.length ?? 0;
       setPageCount(n);
       setThumbRev((r) => r + 1);
-      setUploadStatus("ページをけしました");
+      setUploadStatus(L.pageRemoved);
     } catch (err) {
       setUploadStatus(err instanceof Error ? err.message : "エラー");
     }
@@ -167,15 +164,13 @@ export default function ScanPage() {
 
   const onParse = async () => {
     if (!draftExerciseId || !assignmentId) return;
-    setParseStatus("Gemini がよみとっています…");
+    setParseStatus(L.geminiParsing);
     try {
       const pr = await parseExercise(draftExerciseId);
       const n = pr.exerciseCount ?? 1;
-      const pageNote = pageCount > 1 ? "（複数ページはひとつのだいにまとめました）" : "";
+      const pageNote = pageCount > 1 ? L.parseNoteMulti : "";
       setParseStatus(
-        n > 1
-          ? `よみとりました！${n}つのだいにわけました。${pageNote}プリントのページにもどります。`.trim()
-          : `よみとりました！${pageNote}プリントのページへいきます。`.trim()
+        n > 1 ? L.parseDoneSplit(n, pageNote) : L.parseDoneSingle(pageNote)
       );
       window.setTimeout(() => navigate(`/prints/${encodeURIComponent(assignmentId)}`), 500);
     } catch (err) {
@@ -191,8 +186,12 @@ export default function ScanPage() {
     return (
       <section className="view">
         <div className="card">
-          <p className="status">{bindErr}</p>
-          <Link to="/prints">プリント一覧へ</Link>
+          <p className="status">
+            <RubyHtml html={bindErr} />
+          </p>
+          <Link to="/prints">
+            <RubyHtml html={L.toPrintList} />
+          </Link>
         </div>
       </section>
     );
@@ -201,14 +200,17 @@ export default function ScanPage() {
   return (
     <>
       <nav className="print-breadcrumb muted">
-        <Link to={`/prints/${encodeURIComponent(assignmentId)}`}>← このプリントにもどる</Link>
+        <Link to={`/prints/${encodeURIComponent(assignmentId)}`}>
+          <RubyHtml html={L.backToThisPrint} />
+        </Link>
       </nav>
       <section className="view">
         <div className="card">
-          <h2>ステップ1: プリントをとる</h2>
+          <h2>
+            <RubyHtml html={L.step1Head} />
+          </h2>
           <p className="muted">
-            タブレットでは「カメラでとる」がおすすめ。PCでは「がめんうえでシャッター」かファイルをえらぶ。複数まいは同じプリントのつづきとしてアルバムでまとめてえらぶか、Ctrl+V / ⌘V
-            でいちどに追加します（よみとるときはまとめてひとつのだいになります）。Tailscale のアドレスだけ（https ではない）でつないでいるとき、ブラウザによってはシャッターがつかえません。
+            <RubyHtml html={L.step1Body} />
           </p>
 
           <div className="scan-actions">
@@ -219,7 +221,7 @@ export default function ScanPage() {
               capture="environment"
               multiple
               className="file-input"
-              aria-label="カメラで撮影"
+              aria-label={L.ariaCameraCapture}
               onChange={onFileFromInput}
             />
             <button
@@ -227,7 +229,7 @@ export default function ScanPage() {
               className="btn btn-primary btn-xl btn-block"
               onClick={() => cameraInputRef.current?.click()}
             >
-              📷 カメラでとる
+              <RubyHtml html={L.btnCameraTake} />
             </button>
 
             <button
@@ -235,7 +237,7 @@ export default function ScanPage() {
               className="btn btn-secondary btn-xl btn-block"
               onClick={() => setCameraModalOpen(true)}
             >
-              がめんうえでシャッター
+              <RubyHtml html={L.btnScreenShutter} />
             </button>
 
             <input
@@ -244,7 +246,7 @@ export default function ScanPage() {
               accept="image/*"
               multiple
               className="file-input"
-              aria-label="アルバムやファイルから選ぶ"
+              aria-label={L.ariaPickFiles}
               onChange={onFileFromInput}
             />
             <button
@@ -252,15 +254,17 @@ export default function ScanPage() {
               className="btn btn-secondary btn-xl btn-block"
               onClick={() => galleryInputRef.current?.click()}
             >
-              アルバム／ファイルからえらぶ
+              <RubyHtml html={L.btnAlbumPick} />
             </button>
           </div>
 
-          <p className="status">{uploadStatus}</p>
+          <p className="status">
+            <RubyHtml html={uploadStatus} />
+          </p>
           {draftExerciseId && pageCount > 0 && (
-            <div className="scan-page-strip" aria-label="あっぷろーどしたページ">
+            <div className="scan-page-strip" aria-label={L.ariaUploadedPages}>
               <p className="muted scan-page-count">
-                {pageCount} まいのページ（つづきがあれば、もういちど「カメラ」や「アルバム」からついか）
+                <RubyHtml html={L.scanPageStripHint(pageCount)} />
               </p>
               <div className="scan-thumbs">
                 {Array.from({ length: pageCount }, (_, i) => (
@@ -273,7 +277,7 @@ export default function ScanPage() {
                     <button
                       type="button"
                       className="scan-thumb-remove"
-                      aria-label={`ページ ${i + 1} を削除`}
+                      aria-label={L.ariaRemovePage(i)}
                       onClick={() => void onRemovePage(i)}
                     >
                       ×
@@ -286,19 +290,25 @@ export default function ScanPage() {
         </div>
         {showParse && (
           <div className="card">
-            <h2>ステップ2: AIでよみとる</h2>
-            <p className="status">{parseStatus}</p>
+            <h2>
+              <RubyHtml html={L.step2Head} />
+            </h2>
+            <p className="status">
+              <RubyHtml html={parseStatus} />
+            </p>
             <button
               type="button"
               className="btn btn-primary btn-xl"
               onClick={() => void onParse()}
               disabled={!draftExerciseId || pageCount < 1}
             >
-              {pageCount > 1
-                ? `${pageCount}ページをまとめてよみとる（ひとつのだい）（Gemini）`
-                : "よみとる（1まいのなかに複数だいがあればわける）（Gemini）"}
+              <RubyHtml html={pageCount > 1 ? L.parseBtnMulti(pageCount) : L.parseBtnSingle} />
             </button>
-            {pageCount < 1 ? <p className="muted">ページが1まいはいってからよみとれます。</p> : null}
+            {pageCount < 1 ? (
+              <p className="muted">
+                <RubyHtml html={L.needOnePage} />
+              </p>
+            ) : null}
           </div>
         )}
       </section>

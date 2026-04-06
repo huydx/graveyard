@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { generatePrintSummary, getExercise, getPrintSummary } from "../api/client";
 import RubyHtml from "../components/RubyHtml";
+import * as L from "../lib/uiLabelsRuby";
 import type { AssignmentExerciseRef, PrintLearningSummary, SubmitResult } from "../types";
 
 export default function ResultPage() {
@@ -65,19 +66,25 @@ export default function ResultPage() {
     <section className="view">
       {printAssignmentId ? (
         <nav className="print-breadcrumb muted">
-          <Link to={`/prints/${encodeURIComponent(printAssignmentId)}`}>← このプリントにもどる</Link>
+          <Link to={`/prints/${encodeURIComponent(printAssignmentId)}`}>
+            <RubyHtml html={L.backToThisPrint} />
+          </Link>
         </nav>
       ) : null}
       <div className="card">
-        <h2>けっか</h2>
+        <h2>
+          <RubyHtml html={L.resultHead} />
+        </h2>
         {r ? (
           <>
             <p className="score-big">
-              {r.scorePercent}%（{r.correct}/{r.total} せいかい）
+              <RubyHtml html={L.resultScoreLine(r.scorePercent, r.correct, r.total)} />
             </p>
             {r.questionResults && r.questionResults.length > 0 && (
               <div className="result-by-question">
-                <h3 className="result-by-q-head">もんばんごとのコメント</h3>
+                <h3 className="result-by-q-head">
+                  <RubyHtml html={L.resultByQuestion} />
+                </h3>
                 <ol className="result-q-list">
                   {r.questionResults.map((row) => (
                     <li key={row.questionId} className="result-q-item">
@@ -85,11 +92,11 @@ export default function ResultPage() {
                         <RubyHtml html={row.prompt} />
                       </p>
                       <p className={"result-q-badge" + (row.isCorrect ? " ok" : " ng")}>
-                        {row.isCorrect ? "せいかい" : "ざんねん"}
+                        <RubyHtml html={row.isCorrect ? L.correctJa : L.wrongJa} />
                       </p>
                       {row.userAnswer ? (
                         <p className="muted result-q-ua">
-                          あなたのこたえ: <RubyHtml html={row.userAnswer} />
+                          <RubyHtml html={L.yourAnswer} /> <RubyHtml html={row.userAnswer} />
                         </p>
                       ) : null}
                       <div className="result-q-fb">
@@ -102,37 +109,47 @@ export default function ResultPage() {
             )}
           </>
         ) : (
-          <p className="muted">けっかデータがありません（きろくからひらいたときなど）</p>
+          <p className="muted">
+            <RubyHtml html={L.resultNoData} />
+          </p>
         )}
         <p>
-          <Link to={`/exercise/${encodeURIComponent(id)}`}>もんだいにもどる</Link>
+          <Link to={`/exercise/${encodeURIComponent(id)}`}>
+            <RubyHtml html={L.backToQuestions} />
+          </Link>
         </p>
         {nextInPrint ? (
           <p className="result-next-print">
             <Link to={`/exercise/${encodeURIComponent(nextInPrint.id)}`}>
-              つぎのだい（{nextInPrint.assignmentSort + 1}）のれんしゅうへ →
+              <RubyHtml html={L.nextSectionPractice(nextInPrint.assignmentSort + 1)} />
             </Link>
           </p>
         ) : null}
       </div>
 
       <div className="card">
-        <h3>このプリントのポイント</h3>
+        <h3>
+          <RubyHtml html={L.printPointsHead} />
+        </h3>
         <p className="muted">
-          まとめは<strong>プリントぜんたい</strong>（すべてのだい）を対象にします。くわしくは
+          <RubyHtml html={L.printPointsLeadP1} />
           {printAssignmentId ? (
-            <Link to={`/prints/${encodeURIComponent(printAssignmentId)}`}>プリントページ</Link>
+            <Link to={`/prints/${encodeURIComponent(printAssignmentId)}`}>
+              <RubyHtml html={L.printPointsLink} />
+            </Link>
           ) : (
-            "プリントページ"
+            <RubyHtml html={L.printPointsLink} />
           )}
-          でも見られます。
+          <RubyHtml html={L.printPointsLeadP2} />
         </p>
         {!printAssignmentId ? (
-          <p className="muted">このもんだいにはプリントIDがないため、ここではまとめをつくれません。</p>
+          <p className="muted">
+            <RubyHtml html={L.noPrintIdSummary} />
+          </p>
         ) : null}
         {!summary && !summaryErr && printAssignmentId ? (
           <button type="button" className="btn btn-primary btn-lg" onClick={() => void onGenSummary()} disabled={loading}>
-            {loading ? "つくっている…" : "AIでまとめをつくる"}
+            <RubyHtml html={loading ? L.makingSummary : L.aiMakeSummary} />
           </button>
         ) : null}
         {summaryErr && <p className="status">{summaryErr}</p>}
@@ -145,7 +162,9 @@ export default function ResultPage() {
             ) : null}
             {summary.keyword_cards?.length ? (
               <>
-                <h4 className="print-summary-kw-head">ことば・ポイント（最大10）</h4>
+                <h4 className="print-summary-kw-head">
+                  <RubyHtml html={L.wordsPoints} />
+                </h4>
                 <ul className="print-summary-kw-list">
                   {summary.keyword_cards.map((row, i) => (
                     <li key={i} className="print-summary-card-row">
@@ -170,7 +189,7 @@ export default function ResultPage() {
                   onClick={() => void onGenSummary()}
                   disabled={loading}
                 >
-                  {loading ? "つくりなおしちゅう…" : "まとめをつくりなおす"}
+                  <RubyHtml html={loading ? L.regenSummaryBusy : L.regenSummary} />
                 </button>
               </p>
             ) : null}
@@ -179,7 +198,9 @@ export default function ResultPage() {
       </div>
 
       <p>
-        <Link to="/prints">プリント一覧へ</Link>
+        <Link to="/prints">
+          <RubyHtml html={L.toPrintList} />
+        </Link>
       </p>
     </section>
   );

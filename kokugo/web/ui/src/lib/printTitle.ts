@@ -1,4 +1,10 @@
 import type { AssignmentGroup, Exercise } from "../types";
+import {
+  exerciseRowFallbackBeforeParse,
+  exerciseRowFallbackNoScan,
+  exerciseRowNoTitle,
+  exerciseStatusHtml,
+} from "./uiLabelsRuby";
 
 /** User-set print (assignment) title; empty means fall back to だい1. */
 export function customPrintTitle(a: AssignmentGroup): string {
@@ -21,18 +27,9 @@ export function isOnlyBareEmptyPrint(a: AssignmentGroup): boolean {
   return a.exercises.length === 1 && isBareEmptyDraft(a.exercises[0]);
 }
 
-/** Short Japanese label for exercise.status in lists. */
+/** Short Japanese label for exercise.status in lists (HTML with optional ruby). */
 export function exerciseStatusJa(status: string): string {
-  switch (status) {
-    case "draft":
-      return "下書き";
-    case "parsed":
-      return "よみとりずみ";
-    case "completed":
-      return "れんしゅうおわり";
-    default:
-      return status;
-  }
+  return exerciseStatusHtml(status);
 }
 
 /** Label in だい lists when the exercise has no parser title yet. */
@@ -41,16 +38,16 @@ export function exerciseRowTitleHtml(ex: Exercise): string {
   if (t) return t;
   if (ex.status === "draft") {
     const pc = draftPageCount(ex);
-    if (pc === 0) return "まだスキャンしていません";
-    return `よみとりまえ（${pc}まい）`;
+    if (pc === 0) return exerciseRowFallbackNoScan;
+    return exerciseRowFallbackBeforeParse(pc);
   }
-  return "（むだい）";
+  return exerciseRowNoTitle;
 }
 
 /** Shown when there is no custom title; may contain ruby HTML from the parser. */
 export function exerciseTitleFallbackHtml(a: AssignmentGroup): string {
   const first = a.exercises?.[0];
-  if (!first) return "（むだい）";
-  if (isBareEmptyDraft(first)) return "まだスキャンしていません";
+  if (!first) return exerciseRowNoTitle;
+  if (isBareEmptyDraft(first)) return exerciseRowFallbackNoScan;
   return exerciseRowTitleHtml(first);
 }
