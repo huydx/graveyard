@@ -773,10 +773,6 @@ h3 {
   /* Taller dock so prompts / choices / feedback need less inner scroll */
   --exercise-dock-max-h: min(60vh, 38rem);
 }
-/* Voice / free-text: two-column body + optional reveal panel */
-.exercise-layout.exercise-layout--voice-q:not(.exercise-layout--q-collapsed) {
-  --exercise-dock-max-h: min(52vh, 30rem);
-}
 .passage-panel {
   width: 100%;
   max-width: var(--exercise-pane-max);
@@ -941,13 +937,6 @@ rt {
   border-color: #ea580c;
   background: #fff7ed;
 }
-.q-check-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: center;
-  margin-bottom: 0.5rem;
-}
 .q-reveal-block {
   margin: 0.35rem 0 0.85rem;
 }
@@ -1012,40 +1001,40 @@ rt {
   align-items: stretch;
   gap: 0.4rem;
 }
-.question-panel-inner:has(.voice-area) .q-meta {
+.question-panel-inner:has(.question-interaction-body) .q-meta {
   margin-bottom: 0.25rem;
 }
-.question-panel-inner:has(.voice-area) .q-prompt {
+.question-panel-inner:has(.question-interaction-body) .q-prompt {
   margin: 0.25rem 0 0.35rem;
 }
-.question-panel-inner:has(.voice-area) .row-actions {
+.question-panel-inner:has(.question-interaction-body) .row-actions {
   margin: 0.55rem 0;
 }
-.voice-question-body {
+.question-interaction-body {
   display: grid;
   grid-template-columns: 1fr;
   gap: 0.75rem;
   align-items: start;
 }
 @media (min-width: 520px) {
-  .voice-question-body:has(.voice-question-actions) {
+  .question-interaction-body:has(.question-interaction-actions) {
     grid-template-columns: 1fr minmax(10.75rem, 30%);
     gap: 0.85rem 1rem;
   }
 }
-.voice-question-main {
+.question-interaction-main {
   min-width: 0;
 }
-.voice-question-actions {
+.question-interaction-actions {
   min-width: 0;
 }
-.voice-actions-stack {
+.question-actions-stack {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 0.45rem;
 }
-.voice-action-btn {
+.question-action-btn {
   width: 100%;
   justify-content: center;
   text-align: center;
@@ -1054,18 +1043,18 @@ rt {
   padding-top: 0.55rem;
   padding-bottom: 0.55rem;
 }
-.voice-check-hint {
+.question-check-hint {
   font-size: 0.82rem;
   line-height: 1.45;
   text-align: center;
   margin: 0;
 }
 @media (min-width: 520px) {
-  .voice-check-hint {
+  .question-check-hint {
     text-align: left;
   }
 }
-.q-reveal-block--voice-below {
+.q-reveal-block--below-actions {
   margin-top: 0.35rem;
   margin-bottom: 0.35rem;
 }

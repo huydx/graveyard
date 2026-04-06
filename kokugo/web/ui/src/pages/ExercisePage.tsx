@@ -309,8 +309,7 @@ export default function ExercisePage() {
       )}
       <div
         className={
-          "exercise-layout" +
-          (questionsPanelExpanded ? "" : " exercise-layout--q-collapsed") +
+          "exercise-layout" + (questionsPanelExpanded ? "" : " exercise-layout--q-collapsed")
         }
       >
         <article className="card passage-panel">
@@ -407,201 +406,152 @@ export default function ExercisePage() {
                 <RubyHtml html={q.prompt} />
               </p>
 
-              {q.type === "choice" ? (
-                <>
-                  <div className="choice-grid">
-                    {(q.options || []).map((opt, i) => {
-                      const lab = String.fromCharCode(65 + i);
-                      const sel = answers[q.id] === opt;
-                      return (
-                        <button
-                          key={i}
-                          type="button"
-                          className={"choice-btn" + (sel ? " selected" : "")}
-                          onClick={() => setAnswer(q.id, opt)}
+              <div className="question-interaction-body">
+                <div className="question-interaction-main">
+                  {q.type === "choice" ? (
+                    <div className="choice-grid">
+                      {(q.options || []).map((opt, i) => {
+                        const lab = String.fromCharCode(65 + i);
+                        const sel = answers[q.id] === opt;
+                        return (
+                          <button
+                            key={i}
+                            type="button"
+                            className={"choice-btn" + (sel ? " selected" : "")}
+                            onClick={() => setAnswer(q.id, opt)}
+                          >
+                            <span className="choice-label">{lab}</span>{" "}
+                            <RubyHtml html={opt} />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="voice-area">
+                      {needsHTTPSForMic && (
+                        <div className="voice-https-banner" role="status">
+                          <strong>
+                            <RubyHtml html={L.httpsMicNeeded} />
+                          </strong>
+                          <p>
+                            <RubyHtml html={L.httpsMicBody} />
+                          </p>
+                          <pre className="cmd-snippet">tailscale serve https / http://127.0.0.1:8787</pre>
+                          <p className="muted">
+                            <RubyHtml html={L.httpsMicReadmeHint} />
+                          </p>
+                        </div>
+                      )}
+                      <div className="voice-mic-column">
+                        <div
+                          className={
+                            "mic-btn-wrap" + (showMicHoldAnimation ? " mic-btn-wrap--recording" : "")
+                          }
                         >
-                          <span className="choice-label">{lab}</span>{" "}
-                          <RubyHtml html={opt} />
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {scorable && (
-                    <>
-                      <div className="q-check-row">
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-lg"
-                          disabled={checkBusy}
-                          onClick={() => void onCheckAnswer()}
-                        >
-                          <RubyHtml html={checkBusy ? L.checkAnswerBusy : L.checkAnswer} />
-                        </button>
-                        {!check && (
-                          <span className="muted">
-                            <RubyHtml html={L.checkHint} />
-                          </span>
-                        )}
-                      </div>
-                      <div className="q-reveal-block">
-                        {revealedSolutions[q.id] === undefined ? (
+                          {showMicHoldAnimation && (
+                            <div className="mic-orbit-layer" aria-hidden>
+                              <span className="mic-orbit-ring" />
+                              <span className="mic-orbit-arm">
+                                <span className="mic-orbit-dot" />
+                              </span>
+                              <span className="mic-orbit-arm mic-orbit-arm--lag">
+                                <span className="mic-orbit-dot mic-orbit-dot--secondary" />
+                              </span>
+                            </div>
+                          )}
                           <button
                             type="button"
-                            className="btn btn-ghost btn-lg q-reveal-btn"
-                            disabled={revealBusy}
-                            onClick={() => void onRevealSolution()}
-                          >
-                            <RubyHtml html={revealBusy ? L.revealBusy : L.revealAnswer} />
-                          </button>
-                        ) : (
-                          <div className="q-reveal-panel" role="region" aria-label={L.ariaRevealRegion}>
-                            <div className="q-reveal-head">
-                              <span className="q-reveal-label">
-                                <RubyHtml html={L.revealLabel} />
-                              </span>
-                              <button type="button" className="btn btn-ghost btn-sm" onClick={hideRevealedSolution}>
-                                <RubyHtml html={L.hideJa} />
-                              </button>
-                            </div>
-                            <div className="q-reveal-body">
-                              <RubyHtml html={revealedSolutions[q.id]} />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </>
-              ) : (
-                <>
-                  <div className="voice-question-body">
-                    <div className="voice-question-main">
-                      <div className="voice-area">
-                        {needsHTTPSForMic && (
-                          <div className="voice-https-banner" role="status">
-                            <strong>
-                              <RubyHtml html={L.httpsMicNeeded} />
-                            </strong>
-                            <p>
-                              <RubyHtml html={L.httpsMicBody} />
-                            </p>
-                            <pre className="cmd-snippet">tailscale serve https / http://127.0.0.1:8787</pre>
-                            <p className="muted">
-                              <RubyHtml html={L.httpsMicReadmeHint} />
-                            </p>
-                          </div>
-                        )}
-                        <div className="voice-mic-column">
-                          <div
-                            className={
-                              "mic-btn-wrap" + (showMicHoldAnimation ? " mic-btn-wrap--recording" : "")
+                            className={"mic-btn" + (micActive ? " listening" : "")}
+                            aria-label={
+                              shouldUseBrowserSpeechRecognition()
+                                ? L.micAriaBrowser
+                                : deviceRecording
+                                  ? L.micAriaRecording
+                                  : L.micAriaHold
+                            }
+                            disabled={voiceBusy || (needsHTTPSForMic && !deviceRecording)}
+                            onClick={shouldUseBrowserSpeechRecognition() ? () => onMic() : undefined}
+                            onPointerDown={shouldUseBrowserSpeechRecognition() ? undefined : onMicPointerDown}
+                            onPointerUp={shouldUseBrowserSpeechRecognition() ? undefined : onMicPointerEnd}
+                            onPointerCancel={shouldUseBrowserSpeechRecognition() ? undefined : onMicPointerEnd}
+                            onContextMenu={
+                              shouldUseBrowserSpeechRecognition() ? undefined : (ev) => ev.preventDefault()
                             }
                           >
-                            {showMicHoldAnimation && (
-                              <div className="mic-orbit-layer" aria-hidden>
-                                <span className="mic-orbit-ring" />
-                                <span className="mic-orbit-arm">
-                                  <span className="mic-orbit-dot" />
-                                </span>
-                                <span className="mic-orbit-arm mic-orbit-arm--lag">
-                                  <span className="mic-orbit-dot mic-orbit-dot--secondary" />
-                                </span>
-                              </div>
-                            )}
-                            <button
-                              type="button"
-                              className={"mic-btn" + (micActive ? " listening" : "")}
-                              aria-label={
-                                shouldUseBrowserSpeechRecognition()
-                                  ? L.micAriaBrowser
-                                  : deviceRecording
-                                    ? L.micAriaRecording
-                                    : L.micAriaHold
-                              }
-                              disabled={voiceBusy || (needsHTTPSForMic && !deviceRecording)}
-                              onClick={shouldUseBrowserSpeechRecognition() ? () => onMic() : undefined}
-                              onPointerDown={shouldUseBrowserSpeechRecognition() ? undefined : onMicPointerDown}
-                              onPointerUp={shouldUseBrowserSpeechRecognition() ? undefined : onMicPointerEnd}
-                              onPointerCancel={shouldUseBrowserSpeechRecognition() ? undefined : onMicPointerEnd}
-                              onContextMenu={
-                                shouldUseBrowserSpeechRecognition() ? undefined : (ev) => ev.preventDefault()
-                              }
-                            >
-                              🎤
-                            </button>
-                          </div>
-                          <p className="muted voice-mic-hint">
-                            <RubyHtml
-                              html={
-                                shouldUseBrowserSpeechRecognition()
-                                  ? L.micHintBrowser
-                                  : deviceRecording
-                                    ? L.micHintRelease
-                                    : voiceBusy
-                                      ? L.transcribing
-                                      : L.micHintHold
-                              }
-                            />
-                          </p>
-                          {!shouldUseBrowserSpeechRecognition() && (
-                            <p className="muted voice-hint-ios">
-                              <RubyHtml html={L.micHintIos} />
-                            </p>
-                          )}
+                            🎤
+                          </button>
                         </div>
-                        <p className="voice-text">
-                          <RubyHtml html={answers[q.id] || ""} />
+                        <p className="muted voice-mic-hint">
+                          <RubyHtml
+                            html={
+                              shouldUseBrowserSpeechRecognition()
+                                ? L.micHintBrowser
+                                : deviceRecording
+                                  ? L.micHintRelease
+                                  : voiceBusy
+                                    ? L.transcribing
+                                    : L.micHintHold
+                            }
+                          />
                         </p>
+                        {!shouldUseBrowserSpeechRecognition() && (
+                          <p className="muted voice-hint-ios">
+                            <RubyHtml html={L.micHintIos} />
+                          </p>
+                        )}
                       </div>
-                    </div>
-                    {scorable && (
-                      <aside className="voice-question-actions" aria-label={L.ariaVoiceQuestionActions}>
-                        <div className="voice-actions-stack">
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-lg voice-action-btn"
-                            disabled={checkBusy}
-                            onClick={() => void onCheckAnswer()}
-                          >
-                            <RubyHtml html={checkBusy ? L.checkAnswerBusy : L.checkAnswer} />
-                          </button>
-                          {!check && (
-                            <p className="muted voice-check-hint">
-                              <RubyHtml html={L.checkHint} />
-                            </p>
-                          )}
-                          {revealedSolutions[q.id] === undefined ? (
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-lg voice-action-btn q-reveal-btn"
-                              disabled={revealBusy}
-                              onClick={() => void onRevealSolution()}
-                            >
-                              <RubyHtml html={revealBusy ? L.revealBusy : L.revealAnswer} />
-                            </button>
-                          ) : null}
-                        </div>
-                      </aside>
-                    )}
-                  </div>
-                  {scorable && revealedSolutions[q.id] !== undefined && (
-                    <div className="q-reveal-block q-reveal-block--voice-below">
-                      <div className="q-reveal-panel" role="region" aria-label={L.ariaRevealRegion}>
-                        <div className="q-reveal-head">
-                          <span className="q-reveal-label">
-                            <RubyHtml html={L.revealLabel} />
-                          </span>
-                          <button type="button" className="btn btn-ghost btn-sm" onClick={hideRevealedSolution}>
-                            <RubyHtml html={L.hideJa} />
-                          </button>
-                        </div>
-                        <div className="q-reveal-body">
-                          <RubyHtml html={revealedSolutions[q.id]} />
-                        </div>
-                      </div>
+                      <p className="voice-text">
+                        <RubyHtml html={answers[q.id] || ""} />
+                      </p>
                     </div>
                   )}
-                </>
+                </div>
+                {scorable && (
+                  <aside className="question-interaction-actions" aria-label={L.ariaQuestionActions}>
+                    <div className="question-actions-stack">
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-lg question-action-btn"
+                        disabled={checkBusy}
+                        onClick={() => void onCheckAnswer()}
+                      >
+                        <RubyHtml html={checkBusy ? L.checkAnswerBusy : L.checkAnswer} />
+                      </button>
+                      {!check && (
+                        <p className="muted question-check-hint">
+                          <RubyHtml html={L.checkHint} />
+                        </p>
+                      )}
+                      {revealedSolutions[q.id] === undefined ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-lg question-action-btn q-reveal-btn"
+                          disabled={revealBusy}
+                          onClick={() => void onRevealSolution()}
+                        >
+                          <RubyHtml html={revealBusy ? L.revealBusy : L.revealAnswer} />
+                        </button>
+                      ) : null}
+                    </div>
+                  </aside>
+                )}
+              </div>
+              {scorable && revealedSolutions[q.id] !== undefined && (
+                <div className="q-reveal-block q-reveal-block--below-actions">
+                  <div className="q-reveal-panel" role="region" aria-label={L.ariaRevealRegion}>
+                    <div className="q-reveal-head">
+                      <span className="q-reveal-label">
+                        <RubyHtml html={L.revealLabel} />
+                      </span>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={hideRevealedSolution}>
+                        <RubyHtml html={L.hideJa} />
+                      </button>
+                    </div>
+                    <div className="q-reveal-body">
+                      <RubyHtml html={revealedSolutions[q.id]} />
+                    </div>
+                  </div>
+                </div>
               )}
               {!scorable && (
                 <p className="muted q-scorable-skip">
