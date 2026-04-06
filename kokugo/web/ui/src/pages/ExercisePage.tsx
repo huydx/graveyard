@@ -15,6 +15,7 @@ import { useMediaRecorderAnswer } from "../hooks/useMediaRecorderAnswer";
 import ScanImageModal from "../components/ScanImageModal";
 import RubyHtml, { PassageRuby } from "../components/RubyHtml";
 import { furiganaToSpeechText } from "../lib/ruby";
+import { paths } from "../lib/paths";
 import * as L from "../lib/uiLabelsRuby";
 import type { AssignmentExerciseRef, Question, QuestionCheckResult } from "../types";
 
@@ -256,7 +257,7 @@ export default function ExercisePage() {
     }
     try {
       const res = await submitAnswers(id, payload);
-      navigate(`/result/${encodeURIComponent(id)}`, { state: { result: res } });
+      navigate(paths.kokugo.result(id), { state: { result: res } });
     } catch (e) {
       alert(e instanceof Error ? e.message : "エラー");
     }
@@ -279,7 +280,7 @@ export default function ExercisePage() {
     <section className="view">
       {printAssignmentId ? (
         <nav className="print-breadcrumb muted">
-          <Link to={`/prints/${encodeURIComponent(printAssignmentId)}`}>
+          <Link to={paths.kokugo.print(printAssignmentId)}>
             <RubyHtml html={L.backToThisPrint} />
           </Link>
         </nav>
@@ -298,7 +299,7 @@ export default function ExercisePage() {
                   "btn btn-secondary assignment-sibling-chip" + (s.id === id ? " is-current" : "")
                 }
                 disabled={s.id === id}
-                onClick={() => navigate(`/exercise/${encodeURIComponent(s.id)}`)}
+                onClick={() => navigate(paths.kokugo.exercise(s.id))}
               >
                 {s.assignmentSort + 1}
                 {s.status === "completed" ? " ✓" : ""}

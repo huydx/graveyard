@@ -1,6 +1,6 @@
 import { sanitizeRubyHtml } from "../lib/ruby";
 
-type Props = { html: string; className?: string; as?: "span" | "div" | "p" };
+type Props = { html: string; className?: string; as?: "span" | "div" | "p" | "h1" | "h2" };
 
 /**
  * Renders Japanese text that may include HTML ruby markup from the API.
