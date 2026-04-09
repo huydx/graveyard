@@ -9,7 +9,9 @@ import NewPrintPage from "./pages/NewPrintPage";
 import PrintDetailPage from "./pages/PrintDetailPage";
 import RemindPage from "./pages/RemindPage";
 import SettingsPage from "./pages/SettingsPage";
-import SansuHomePage from "./pages/SansuHomePage";
+import SansuNewPrintPage from "./pages/SansuNewPrintPage";
+import SansuPrintsPage from "./pages/SansuPrintsPage";
+import SansuScanPage from "./pages/SansuScanPage";
 import {
   LegacyExerciseRedirect,
   LegacyKokugoRedirect,
@@ -33,7 +35,12 @@ export default function App() {
           <Route path="remind" element={<RemindPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
-        <Route path="sansu" element={<SansuHomePage />} />
+        <Route path="sansu">
+          <Route index element={<Navigate to="prints" replace />} />
+          <Route path="prints" element={<SansuPrintsPage />} />
+          <Route path="prints/new" element={<SansuNewPrintPage />} />
+          <Route path="prints/:assignmentId/scan" element={<SansuScanPage />} />
+        </Route>
       </Route>
 
       <Route path="/prints/*" element={<LegacyKokugoRedirect />} />

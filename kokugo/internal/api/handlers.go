@@ -102,6 +102,114 @@ func (s *Server) TranscribeAudio(w http.ResponseWriter, r *http.Request) {
 	s.json(w, http.StatusOK, map[string]string{"text": text})
 }
 
+func (s *Server) SummarizeSansuKotsu(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.err(w, http.StatusMethodNotAllowed, "POST のみ")
+		return
+	}
+	rt := s.lm()
+	if rt.summaryChat == nil || rt.effSummaryBackend != "gemini" {
+		s.err(w, http.StatusServiceUnavailable, "この機能は Gemini でのみ使えます（設定で「まとめ」を gemini にしてください）")
+		return
+	}
+	_ = r.ParseMultipartForm(16 << 20)
+	file, hdr, err := r.FormFile("image")
+	if err != nil {
+		s.err(w, http.StatusBadRequest, "画像ファイル image が必要です")
+		return
+	}
+	defer file.Close()
+	data, err := io.ReadAll(file)
+	if err != nil || len(data) == 0 {
+		s.err(w, http.StatusBadRequest, "画像を読めませんでした")
+		return
+	}
+	if len(data) > 12<<20 {
+		s.err(w, http.StatusBadRequest, "画像が大きすぎます")
+		return
+	}
+	mime := hdr.Header.Get("Content-Type")
+	if mime == "" || mime == "application/octet-stream" {
+		mime = mimeForPath(hdr.Filename)
+	}
+	sum, err := ai.SummarizeMathExerciseKotsu(r.Context(), rt.summaryChat, rt.summaryModel, data, mime)
+	if err != nil {
+		log.Printf("sansu_kotsu: %v", err)
+		s.err(w, http.StatusBadGateway, "算数のまとめ生成に失敗しました: "+err.Error())
+		return
+	}
+	s.json(w, http.StatusOK, map[string]any{"summary": sum})
+}
+
+func (s *Server) SummarizeSansuExerciseKotsu(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.err(w, http.StatusMethodNotAllowed, "POST のみ")
+		return
+	}
+	rt := s.lm()
+	if rt.summaryChat == nil || rt.effSummaryBackend != "gemini" {
+		s.err(w, http.StatusServiceUnavailable, "この機能は Gemini でのみ使えます（設定で「まとめ」を gemini にしてください）")
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		s.err(w, http.StatusBadRequest, "演習IDが不正です")
+		return
+	}
+	ex, _, err := s.Store.GetExercise(r.Context(), id)
+	if err != nil {
+		s.err(w, http.StatusNotFound, "見つかりません")
+		return
+	}
+	paths := ex.ImagePaths
+	if len(paths) == 0 && ex.ImagePath != "" {
+		paths = []string{ex.ImagePath}
+	}
+	if len(paths) == 0 {
+		s.err(w, http.StatusBadRequest, "画像がありません")
+		return
+	}
+	data, err := os.ReadFile(paths[0])
+	if err != nil || len(data) == 0 {
+		s.err(w, http.StatusInternalServerError, "画像ファイルを読めません")
+		return
+	}
+	sum, err := ai.SummarizeMathExerciseKotsu(r.Context(), rt.summaryChat, rt.summaryModel, data, mimeForPath(paths[0]))
+	if err != nil {
+		log.Printf("sansu_exercise_kotsu: %v", err)
+		s.err(w, http.StatusBadGateway, "算数のまとめ生成に失敗しました: "+err.Error())
+		return
+	}
+	raw, err := json.Marshal(sum)
+	if err == nil {
+		_ = s.Store.SaveSummary(r.Context(), id, string(raw))
+	}
+	s.json(w, http.StatusOK, map[string]any{"summary": sum})
+}
+
+func (s *Server) GetSansuExerciseKotsu(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.err(w, http.StatusMethodNotAllowed, "GET のみ")
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		s.err(w, http.StatusBadRequest, "演習IDが不正です")
+		return
+	}
+	j, err := s.Store.GetSummary(r.Context(), id)
+	if err != nil || strings.TrimSpace(j) == "" {
+		s.err(w, http.StatusNotFound, "まだありません")
+		return
+	}
+	var sum ai.MathExerciseKotsuSummary
+	if err := json.Unmarshal([]byte(j), &sum); err != nil {
+		s.err(w, http.StatusInternalServerError, "まとめの形式が壊れています")
+		return
+	}
+	s.json(w, http.StatusOK, map[string]any{"summary": sum})
+}
+
 func (s *Server) UploadScan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		s.err(w, http.StatusMethodNotAllowed, "POST のみ")
@@ -145,6 +253,14 @@ func (s *Server) UploadScan(w http.ResponseWriter, r *http.Request) {
 
 // CreatePrint creates an empty assignment + draft exercise (no images). JSON body must include a non-empty "title".
 func (s *Server) CreatePrint(w http.ResponseWriter, r *http.Request) {
+	s.createPrintWithSubject(w, r, "kokugo")
+}
+
+func (s *Server) CreateSansuPrint(w http.ResponseWriter, r *http.Request) {
+	s.createPrintWithSubject(w, r, "sansu")
+}
+
+func (s *Server) createPrintWithSubject(w http.ResponseWriter, r *http.Request, subject string) {
 	if r.Method != http.MethodPost {
 		s.err(w, http.StatusMethodNotAllowed, "POST のみ")
 		return
@@ -168,7 +284,7 @@ func (s *Server) CreatePrint(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusBadRequest, "タイトルは200文字以内にしてください")
 		return
 	}
-	ex, err := s.Store.CreateEmptyPrintDraft(r.Context())
+	ex, err := s.Store.CreateEmptyPrintDraftForSubject(r.Context(), subject)
 	if err != nil {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
@@ -185,6 +301,14 @@ func (s *Server) CreatePrint(w http.ResponseWriter, r *http.Request) {
 
 // GetPrint returns one assignment (print) with exercises and primaryExerciseId for scanning.
 func (s *Server) GetPrint(w http.ResponseWriter, r *http.Request) {
+	s.getPrintWithSubject(w, r, "kokugo")
+}
+
+func (s *Server) GetSansuPrint(w http.ResponseWriter, r *http.Request) {
+	s.getPrintWithSubject(w, r, "sansu")
+}
+
+func (s *Server) getPrintWithSubject(w http.ResponseWriter, r *http.Request, subject string) {
 	if r.Method != http.MethodGet {
 		s.err(w, http.StatusMethodNotAllowed, "GET のみ")
 		return
@@ -201,6 +325,11 @@ func (s *Server) GetPrint(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.err(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	as, err := s.Store.AssignmentSubject(r.Context(), aid)
+	if err != nil || as != subject {
+		s.err(w, http.StatusNotFound, "見つかりません")
 		return
 	}
 	pid := ""
@@ -253,6 +382,14 @@ func (s *Server) PatchPrint(w http.ResponseWriter, r *http.Request) {
 
 // EnsureScanDraft returns the draft exercise to attach scan pages to: reuses the last row if it is draft, otherwise appends a new draft.
 func (s *Server) EnsureScanDraft(w http.ResponseWriter, r *http.Request) {
+	s.ensureScanDraftWithSubject(w, r, "kokugo")
+}
+
+func (s *Server) EnsureSansuScanDraft(w http.ResponseWriter, r *http.Request) {
+	s.ensureScanDraftWithSubject(w, r, "sansu")
+}
+
+func (s *Server) ensureScanDraftWithSubject(w http.ResponseWriter, r *http.Request, subject string) {
 	if r.Method != http.MethodPost {
 		s.err(w, http.StatusMethodNotAllowed, "POST のみ")
 		return
@@ -269,6 +406,11 @@ func (s *Server) EnsureScanDraft(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.err(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	as, err := s.Store.AssignmentSubject(r.Context(), aid)
+	if err != nil || as != subject {
+		s.err(w, http.StatusNotFound, "見つかりません")
 		return
 	}
 	if len(g.Exercises) == 0 {
@@ -1148,6 +1290,15 @@ func (s *Server) History(w http.ResponseWriter, r *http.Request) {
 	s.json(w, http.StatusOK, map[string]any{"assignments": groups})
 }
 
+func (s *Server) SansuHistory(w http.ResponseWriter, r *http.Request) {
+	groups, err := s.Store.ListAssignmentsForHistoryBySubject(r.Context(), 80, "sansu")
+	if err != nil {
+		s.err(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.json(w, http.StatusOK, map[string]any{"assignments": groups})
+}
+
 func (s *Server) MonthlyReminder(w http.ResponseWriter, r *http.Request) {
 	cards, err := s.Store.MonthlyVocab(r.Context(), 40)
 	if err != nil {
@@ -1184,11 +1335,18 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/settings", s.PutSettings)
 	mux.HandleFunc("POST /api/settings", s.PutSettings)
 	mux.HandleFunc("POST /api/transcribe", s.TranscribeAudio)
+	mux.HandleFunc("POST /api/sansu/kotsu", s.SummarizeSansuKotsu)
+	mux.HandleFunc("POST /api/sansu/exercises/{id}/kotsu", s.SummarizeSansuExerciseKotsu)
+	mux.HandleFunc("GET /api/sansu/exercises/{id}/kotsu", s.GetSansuExerciseKotsu)
 	mux.HandleFunc("POST /api/upload", s.UploadScan)
 	mux.HandleFunc("GET /api/prints/{id}", s.GetPrint)
 	mux.HandleFunc("PATCH /api/prints/{id}", s.PatchPrint)
 	mux.HandleFunc("POST /api/prints/{id}/ensure-scan-draft", s.EnsureScanDraft)
+	mux.HandleFunc("POST /api/sansu/prints/{id}/ensure-scan-draft", s.EnsureSansuScanDraft)
 	mux.HandleFunc("POST /api/prints", s.CreatePrint)
+	mux.HandleFunc("POST /api/sansu/prints", s.CreateSansuPrint)
+	mux.HandleFunc("GET /api/sansu/prints/{id}", s.GetSansuPrint)
+	mux.HandleFunc("GET /api/sansu/history", s.SansuHistory)
 	mux.HandleFunc("POST /api/exercises/{id}/pages", s.AddExercisePage)
 	mux.HandleFunc("DELETE /api/exercises/{id}/pages/{pageIndex}", s.DeleteExercisePage)
 	mux.HandleFunc("POST /api/exercises/{id}/parse", s.ParseExercise)

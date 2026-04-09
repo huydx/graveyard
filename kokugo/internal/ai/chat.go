@@ -18,6 +18,7 @@ const (
 	ChatGeminiStructuredNone ChatGeminiStructuredKind = iota
 	ChatGeminiStructuredPrintLearningSummary
 	ChatGeminiStructuredAnswerJudgment
+	ChatGeminiStructuredMathExerciseKotsu
 )
 
 // ChatImageURL is an OpenAI-style image_url block (often a data: URL with base64).

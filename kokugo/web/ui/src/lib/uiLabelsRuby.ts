@@ -10,8 +10,32 @@ export const soonBadge = `<ruby>準備中<rt>じゅんびちゅう</rt></ruby>`;
 export const backToAppHub = `← <ruby>科目<rt>かもく</rt></ruby>の<ruby>一覧<rt>いちらん</rt></ruby>`;
 export const navAppHub = `<ruby>科目<rt>かもく</rt></ruby><ruby>一覧<rt>いちらん</rt></ruby>`;
 export const sansuPageTitle = `<ruby>算数<rt>さんすう</rt></ruby>`;
-export const sansuPageLead = `ここに<ruby>算数<rt>さんすう</rt></ruby>の<ruby>練習<rt>れんしゅう</rt></ruby>やゲームをのせる<ruby>予定<rt>よてい</rt></ruby>です。しばらくおまちください。`;
+export const sansuPageLead = `<ruby>写真<rt>しゃしん</rt></ruby>で<ruby>算数<rt>さんすう</rt></ruby>の<ruby>問題<rt>もんだい</rt></ruby>をよみとって、<ruby>解<rt>と</rt></ruby>くコツをやさしくまとめます。`;
 export const sansuSidebarHint = `<ruby>内容<rt>ないよう</rt></ruby>はこれから<ruby>足<rt>た</rt></ruby>していきます`;
+export const sansuUploadLabel = `<ruby>算数<rt>さんすう</rt></ruby>の<ruby>問題<rt>もんだい</rt></ruby><ruby>画像<rt>がぞう</rt></ruby>をえらぶ`;
+export const sansuAnalyze = `AIでコツをまとめる`;
+export const sansuAnalyzing = `まとめ<ruby>中<rt>ちゅう</rt></ruby>…`;
+export const sansuMainIdeaHead = `<ruby>問題<rt>もんだい</rt></ruby>の<ruby>中心<rt>ちゅうしん</rt></ruby>アイデア`;
+export const sansuPatternHead = `この<ruby>問題<rt>もんだい</rt></ruby>のパターン`;
+export const sansuCareHead = `にた<ruby>問題<rt>もんだい</rt></ruby>で<ruby>気<rt>き</rt></ruby>をつけること`;
+export const sansuStep1Head = `ステップ1: <ruby>算数<rt>さんすう</rt></ruby>のプリントをとる`;
+export const sansuStep1Body = `カメラかアルバムから、1<ruby>枚<rt>まい</rt></ruby>えらんでください。`;
+export const sansuStep2Head = `ステップ2: AIでコツをつくる`;
+export const sansuNeedOnePage = `まずは1<ruby>枚<rt>まい</rt></ruby>えらんでね。`;
+export const sansuUploadOk = `<ruby>画像<rt>がぞう</rt></ruby>をセットしました！`;
+export const sansuImageRemoved = `<ruby>画像<rt>がぞう</rt></ruby>をけしました。`;
+export const sansuThumbLabel = `えらんだ<ruby>画像<rt>がぞう</rt></ruby>`;
+export const sansuPrintsHeroTitle = `<ruby>算数<rt>さんすう</rt></ruby>プリント`;
+export const sansuPrintsHeroLead = `<ruby>新<rt>あたら</rt></ruby>しいプリントをつくって、<ruby>画像<rt>がぞう</rt></ruby>をスキャンしよう。`;
+export const sansuNewPrintCta = `<ruby>新<rt>あたら</rt></ruby>しい<ruby>算数<rt>さんすう</rt></ruby>プリント`;
+export const sansuPastPrintsHead = `いままでの<ruby>算数<rt>さんすう</rt></ruby>プリント`;
+export const sansuNewPrintHead = `<ruby>新<rt>あたら</rt></ruby>しい<ruby>算数<rt>さんすう</rt></ruby>プリント`;
+export const sansuNewPrintLead = `<ruby>名前<rt>なまえ</rt></ruby>をいれて<ruby>保存<rt>ほぞん</rt></ruby>すると、スキャンページにすすみます。`;
+export const sansuPrintNameLabel = `<ruby>算数<rt>さんすう</rt></ruby>プリントの<ruby>名前<rt>なまえ</rt></ruby>`;
+export const sansuCreatePrint = `<ruby>保存<rt>ほぞん</rt></ruby>してスキャンへ`;
+export const sansuVisualHead = `まとめのイメージ`;
+export const sansuVisualCreate = `イメージをつくる`;
+export const sansuVisualRecreate = `イメージをつくりなおす`;
 
 /** Kokugo mini-app name in sidebar (under super-app home link). */
 export const brandTitle = `<ruby>国語<rt>こくご</rt></ruby>アトリエ`;
@@ -87,7 +111,14 @@ export const regenSummaryBusy = `つくり<ruby>直<rt>なお</rt></ruby>し<rub
 export const regenSummary = `まとめをつくりなおす`;
 export const wordsPoints = `ことば・ポイント（<ruby>最大<rt>さいだい</rt></ruby>10）`;
 
-export const readAloud = `<ruby>読<rt>よ</rt></ruby>み<ruby>上<rt>あ</rt></ruby>げ`;
+export const speedReadToggleOn = `<ruby>速読<rt>そくどく</rt></ruby>モード`;
+export const speedReadToggleOff = `<ruby>速読<rt>そくどく</rt></ruby>を<ruby>閉<rt>と</rt></ruby>じる`;
+export const speedReadStart = `<ruby>開始<rt>かいし</rt></ruby>`;
+export const speedReadPause = `<ruby>一時停止<rt>いちじていし</rt></ruby>`;
+export const speedReadReset = `<ruby>最初<rt>さいしょ</rt></ruby>にもどす`;
+export const speedReadSpeed = `<ruby>速<rt>はや</rt></ruby>さ`;
+export const speedReadSpeedUnit = `語/分`;
+export const speedReadAriaSlider = `<ruby>速読<rt>そくどく</rt></ruby>の<ruby>速<rt>はや</rt></ruby>さ`;
 export const scanPagesLabel = (n: number) =>
   `${n} <ruby>枚<rt>まい</rt></ruby>のプリント（サムネをタップで<ruby>大<rt>おお</rt></ruby>きく<ruby>見<rt>み</rt></ruby>る）`;
 export const ariaEnlargePage = (i: number) =>

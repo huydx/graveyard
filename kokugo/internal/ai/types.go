@@ -51,6 +51,15 @@ type PrintLearningSummary struct {
 	KeywordCards []PrintKeywordCard `json:"keyword_cards"`
 }
 
+// MathExerciseKotsuSummary is a kid-friendly tips summary for one math exercise image.
+type MathExerciseKotsuSummary struct {
+	MainIdea           string   `json:"main_idea"`
+	Pattern            string   `json:"pattern"`
+	CarePoints         []string `json:"care_points"`
+	VisualizationIdeas []string `json:"visualization_ideas,omitempty"`
+	VisualizationHTML  string   `json:"visualization_html,omitempty"`
+}
+
 // UnmarshalJSON accepts current "keyword_cards" or legacy "keywords_nuances" ([]string).
 func (s *PrintLearningSummary) UnmarshalJSON(data []byte) error {
 	type legacy struct {

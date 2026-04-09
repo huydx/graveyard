@@ -24,10 +24,9 @@ export const miniApps: MiniApp[] = [
   },
   {
     id: "sansu",
-    href: paths.sansu,
+    href: paths.sansu.prints,
     titleHtml: `<ruby>算数<rt>さんすう</rt></ruby>`,
-    descriptionHtml: `まもなく<ruby>使<rt>つか</rt></ruby>えるように<ruby>準備<rt>じゅんび</rt></ruby><ruby>中<rt>ちゅう</rt></ruby>です`,
+    descriptionHtml: `プリント<ruby>画像<rt>がぞう</rt></ruby>から「コツ」をやさしくまとめる`,
     icon: "🔢",
-    comingSoon: true,
   },
 ];
