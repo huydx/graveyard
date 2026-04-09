@@ -138,7 +138,7 @@ func (s *Store) EnsureAssignment(ctx context.Context, exerciseID string) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO assignments (id, created_at) VALUES (?, ?)`, aid, created); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO assignments (id, created_at, subject) VALUES (?, ?, 'kokugo')`, aid, created); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -146,6 +146,15 @@ func (s *Store) EnsureAssignment(ctx context.Context, exerciseID string) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+func (s *Store) AssignmentSubject(ctx context.Context, assignmentID string) (string, error) {
+	var subject string
+	err := s.db.QueryRowContext(ctx, `SELECT ifnull(subject, 'kokugo') FROM assignments WHERE id = ?`, assignmentID).Scan(&subject)
+	if err != nil {
+		return "", err
+	}
+	return strings.ToLower(strings.TrimSpace(subject)), nil
 }
 
 // ListExercisesInAssignment returns exercises ordered by assignment_sort.
@@ -225,11 +234,21 @@ func (s *Store) UpdateAssignmentTitle(ctx context.Context, assignmentID, title s
 
 // ListAssignmentsForHistory returns recent assignments with nested exercises.
 func (s *Store) ListAssignmentsForHistory(ctx context.Context, limit int) ([]AssignmentGroup, error) {
+	return s.ListAssignmentsForHistoryBySubject(ctx, limit, "kokugo")
+}
+
+func (s *Store) ListAssignmentsForHistoryBySubject(ctx context.Context, limit int, subject string) ([]AssignmentGroup, error) {
 	if limit <= 0 {
 		limit = 50
 	}
+	subject = strings.ToLower(strings.TrimSpace(subject))
+	if subject == "" {
+		subject = "kokugo"
+	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, created_at, ifnull(title, '') FROM assignments ORDER BY datetime(created_at) DESC LIMIT ?`, limit)
+		SELECT id, created_at, ifnull(title, '') FROM assignments
+		WHERE ifnull(subject, 'kokugo') = ?
+		ORDER BY datetime(created_at) DESC LIMIT ?`, subject, limit)
 	if err != nil {
 		return nil, err
 	}

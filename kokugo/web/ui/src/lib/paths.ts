@@ -5,7 +5,12 @@ export const SANSU_BASE = "/sansu";
 
 export const paths = {
   home: "/",
-  sansu: SANSU_BASE,
+  sansu: {
+    home: SANSU_BASE,
+    prints: `${SANSU_BASE}/prints`,
+    printsNew: `${SANSU_BASE}/prints/new`,
+    scan: (id: string) => `${SANSU_BASE}/prints/${encodeURIComponent(id)}/scan`,
+  },
   kokugo: {
     prints: `${KOKUGO_BASE}/prints`,
     printsNew: `${KOKUGO_BASE}/prints/new`,

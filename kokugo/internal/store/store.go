@@ -157,9 +157,18 @@ func (s *Store) migrate() error {
 	if _, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS assignments (
 			id TEXT PRIMARY KEY,
-			created_at TEXT NOT NULL
+			created_at TEXT NOT NULL,
+			subject TEXT NOT NULL DEFAULT 'kokugo'
 		);`); err != nil {
 		return fmt.Errorf("migrate assignments table: %w", err)
+	}
+	if _, err := s.db.Exec(`ALTER TABLE assignments ADD COLUMN subject TEXT NOT NULL DEFAULT 'kokugo'`); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+			return fmt.Errorf("migrate assignments subject: %w", err)
+		}
+	}
+	if _, err := s.db.Exec(`UPDATE assignments SET subject = 'kokugo' WHERE trim(ifnull(subject, '')) = ''`); err != nil {
+		return fmt.Errorf("migrate assignments subject backfill: %w", err)
 	}
 	if _, err := s.db.Exec(`ALTER TABLE exercises ADD COLUMN assignment_id TEXT REFERENCES assignments(id) ON DELETE CASCADE`); err != nil {
 		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
@@ -219,7 +228,7 @@ func (s *Store) backfillAssignments() error {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO assignments (id, created_at) VALUES (?, ?)`, aid, p.created); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO assignments (id, created_at, subject) VALUES (?, ?, 'kokugo')`, aid, p.created); err != nil {
 			_ = tx.Rollback()
 			return err
 		}
@@ -273,7 +282,7 @@ func (s *Store) CreateExerciseDraft(ctx context.Context, imagePath string) (*Exe
 	defer func() { _ = tx.Rollback() }()
 	aid := uuid.NewString()
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO assignments (id, created_at) VALUES (?, ?)`, aid, ts); err != nil {
+		INSERT INTO assignments (id, created_at, subject) VALUES (?, ?, 'kokugo')`, aid, ts); err != nil {
 		return nil, err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -296,9 +305,22 @@ func (s *Store) CreateExerciseDraft(ctx context.Context, imagePath string) (*Exe
 
 // CreateEmptyPrintDraft creates an assignment and a primary draft exercise with no pages yet (画像はあとから追加).
 func (s *Store) CreateEmptyPrintDraft(ctx context.Context) (*Exercise, error) {
+	return s.CreateEmptyPrintDraftForSubject(ctx, "kokugo")
+}
+
+func normalizeSubject(subject string) string {
+	v := strings.ToLower(strings.TrimSpace(subject))
+	if v == "sansu" {
+		return "sansu"
+	}
+	return "kokugo"
+}
+
+func (s *Store) CreateEmptyPrintDraftForSubject(ctx context.Context, subject string) (*Exercise, error) {
 	id := uuid.NewString()
 	now := time.Now().UTC()
 	ts := now.Format(time.RFC3339)
+	subject = normalizeSubject(subject)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -306,7 +328,7 @@ func (s *Store) CreateEmptyPrintDraft(ctx context.Context) (*Exercise, error) {
 	defer func() { _ = tx.Rollback() }()
 	aid := uuid.NewString()
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO assignments (id, created_at) VALUES (?, ?)`, aid, ts); err != nil {
+		INSERT INTO assignments (id, created_at, subject) VALUES (?, ?, ?)`, aid, ts, subject); err != nil {
 		return nil, err
 	}
 	if _, err := tx.ExecContext(ctx, `

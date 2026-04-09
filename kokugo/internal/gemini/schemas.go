@@ -9,6 +9,10 @@ func schemaParsedPageBundle() *genai.Schema {
 	return &genai.Schema{
 		Type: genai.TypeObject,
 		Properties: map[string]*genai.Schema{
+			"page_reading_order": {
+				Type:        genai.TypeInteger,
+				Description: "複数枚アップロード時のみ。撮影・送信順と実際の読む順がずれることがある。プリントのページ番号・つづき・見開きなどから、この枚を教材全体の何ページ目として読むべきか（1始まり）。手がかりがなければアプリが送る「k/全n枚」のkと同じでよい。",
+			},
 			"exercises": {
 				Type:        genai.TypeArray,
 				Items:       schemaParsedExercise(),
@@ -149,5 +153,54 @@ func schemaPrintLearningSummary() *genai.Schema {
 			},
 		},
 		Required: []string{"overview", "keyword_cards"},
+	}
+}
+
+func schemaMathExerciseKotsu() *genai.Schema {
+	maxMain := int64(220)
+	maxPattern := int64(220)
+	maxCare := int64(120)
+	maxCareItems := int64(5)
+	maxVis := int64(140)
+	maxVisItems := int64(4)
+	maxVisHTML := int64(4000)
+	return &genai.Schema{
+		Type: genai.TypeObject,
+		Properties: map[string]*genai.Schema{
+			"main_idea": {
+				Type:        genai.TypeString,
+				Description: "この問題で何をするかを小学生向けに短く説明",
+				MaxLength:   &maxMain,
+			},
+			"pattern": {
+				Type:        genai.TypeString,
+				Description: "どんな解き方の型かを短く説明",
+				MaxLength:   &maxPattern,
+			},
+			"care_points": {
+				Type:        genai.TypeArray,
+				Description: "同じ型の問題で気をつけること（2〜5個）",
+				MaxItems:    &maxCareItems,
+				Items: &genai.Schema{
+					Type:      genai.TypeString,
+					MaxLength: &maxCare,
+				},
+			},
+			"visualization_ideas": {
+				Type:        genai.TypeArray,
+				Description: "問題や考え方を図で見せるための短い指示（2〜4個）",
+				MaxItems:    &maxVisItems,
+				Items: &genai.Schema{
+					Type:      genai.TypeString,
+					MaxLength: &maxVis,
+				},
+			},
+			"visualization_html": {
+				Type:        genai.TypeString,
+				Description: "子ども向け図解HTML（div/p/ul/li/table/svgなど）。答えは書かず、考え方を見せる。",
+				MaxLength:   &maxVisHTML,
+			},
+		},
+		Required: []string{"main_idea", "pattern", "care_points"},
 	}
 }

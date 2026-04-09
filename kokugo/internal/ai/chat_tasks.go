@@ -73,6 +73,74 @@ func SummarizePrint(ctx context.Context, c ChatCompleter, model string, printPay
 	return &out, nil
 }
 
+// SummarizeMathExerciseKotsu extracts kid-friendly solving tips from one math exercise image.
+func SummarizeMathExerciseKotsu(ctx context.Context, c ChatCompleter, model string, image []byte, mime string) (*MathExerciseKotsuSummary, error) {
+	if c == nil {
+		return nil, fmt.Errorf("chat: nil completer")
+	}
+	if len(image) == 0 {
+		return nil, fmt.Errorf("画像データが空です")
+	}
+	if mime == "" || mime == "application/octet-stream" {
+		mime = "image/jpeg"
+	}
+	req := ChatCompletionRequest{
+		Model:       model,
+		Temperature: 0.2,
+		MaxTokens:   2048,
+		Messages: []ChatMessage{
+			TextMessage("system", MathKotsuSystem),
+			{
+				Role: "user",
+				Content: []ChatContentPart{
+					{Type: "text", Text: MathKotsuUser},
+					{Type: "image_url", ImageURL: &ChatImageURL{URL: EncodeImageDataURL(mime, image), Detail: "high"}},
+				},
+			},
+		},
+		ResponseFormat:   &ChatResponseFormat{Type: "json_object"},
+		GeminiStructured: ChatGeminiStructuredMathExerciseKotsu,
+	}
+	resp, err := c.CreateChatCompletion(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	text, err := FirstAssistantContent(resp)
+	if err != nil {
+		return nil, err
+	}
+	text = StripMarkdownFence(text)
+	var out MathExerciseKotsuSummary
+	if err := json.Unmarshal([]byte(text), &out); err != nil {
+		return nil, fmt.Errorf("math kotsu JSON: %w", err)
+	}
+	out.MainIdea = strings.TrimSpace(out.MainIdea)
+	out.Pattern = strings.TrimSpace(out.Pattern)
+	trimmed := make([]string, 0, len(out.CarePoints))
+	for _, cp := range out.CarePoints {
+		cp = strings.TrimSpace(cp)
+		if cp == "" {
+			continue
+		}
+		trimmed = append(trimmed, cp)
+	}
+	out.CarePoints = trimmed
+	vis := make([]string, 0, len(out.VisualizationIdeas))
+	for _, v := range out.VisualizationIdeas {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		vis = append(vis, v)
+	}
+	out.VisualizationIdeas = vis
+	out.VisualizationHTML = strings.TrimSpace(out.VisualizationHTML)
+	if out.MainIdea == "" || out.Pattern == "" || len(out.CarePoints) == 0 {
+		return nil, fmt.Errorf("math kotsu JSON: required fields are empty")
+	}
+	return &out, nil
+}
+
 func truncateJudgeLog(s string, maxRunes int) string {
 	s = strings.TrimSpace(s)
 	if maxRunes <= 0 {

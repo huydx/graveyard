@@ -4,9 +4,26 @@ import "testing"
 
 func TestDecodeParsedPageJSON_bundle(t *testing.T) {
 	raw := `{"exercises":[{"title":"A","passage":"p","questions":[{"type":"voice","prompt":"q","options":[],"correct":"","focus_word":""}]}]}`
-	list, err := decodeParsedPageJSON(raw)
+	list, order, err := decodeParsedPageJSON(raw)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if order != 0 {
+		t.Fatalf("order: %d want 0", order)
+	}
+	if len(list) != 1 || list[0].Title != "A" {
+		t.Fatalf("got %+v", list)
+	}
+}
+
+func TestDecodeParsedPageJSON_pageReadingOrder(t *testing.T) {
+	raw := `{"page_reading_order":2,"exercises":[{"title":"A","passage":"p","questions":[{"type":"voice","prompt":"q","options":[],"correct":"","focus_word":""}]}]}`
+	list, order, err := decodeParsedPageJSON(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if order != 2 {
+		t.Fatalf("order: %d want 2", order)
 	}
 	if len(list) != 1 || list[0].Title != "A" {
 		t.Fatalf("got %+v", list)
@@ -15,12 +32,41 @@ func TestDecodeParsedPageJSON_bundle(t *testing.T) {
 
 func TestDecodeParsedPageJSON_legacySingle(t *testing.T) {
 	raw := `{"title":"B","passage":"x","questions":[{"type":"voice","prompt":"q","options":[],"correct":"","focus_word":""}]}`
-	list, err := decodeParsedPageJSON(raw)
+	list, order, err := decodeParsedPageJSON(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if order != 0 {
+		t.Fatalf("order: %d want 0", order)
+	}
 	if len(list) != 1 || list[0].Title != "B" {
 		t.Fatalf("got %+v", list)
+	}
+}
+
+func TestSortPageOrderedParses_reordersByReadingOrder(t *testing.T) {
+	first := ParsedExercise{Title: "first", Questions: []ParsedQuestion{{Prompt: "a"}}}
+	second := ParsedExercise{Title: "second", Questions: []ParsedQuestion{{Prompt: "b"}}}
+	pages := []pageOrderedParse{
+		{readingOrder: 2, uploadIndex: 0, exercises: []ParsedExercise{second}},
+		{readingOrder: 1, uploadIndex: 1, exercises: []ParsedExercise{first}},
+	}
+	got := sortPageOrderedParses(pages)
+	if len(got) != 2 || got[0][0].Title != "first" || got[1][0].Title != "second" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestSortPageOrderedParses_stableWhenOrderTies(t *testing.T) {
+	a := ParsedExercise{Title: "a"}
+	b := ParsedExercise{Title: "b"}
+	pages := []pageOrderedParse{
+		{readingOrder: 1, uploadIndex: 1, exercises: []ParsedExercise{b}},
+		{readingOrder: 1, uploadIndex: 0, exercises: []ParsedExercise{a}},
+	}
+	got := sortPageOrderedParses(pages)
+	if len(got) != 2 || got[0][0].Title != "a" || got[1][0].Title != "b" {
+		t.Fatalf("got %+v", got)
 	}
 }
 

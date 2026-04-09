@@ -96,6 +96,14 @@ export interface PrintLearningSummary {
   keyword_cards: PrintKeywordCard[];
 }
 
+export interface SansuKotsuSummary {
+  main_idea: string;
+  pattern: string;
+  care_points: string[];
+  visualization_ideas?: string[];
+  visualization_html?: string;
+}
+
 /** @deprecated Per-exercise summary; API uses print-level summary now. */
 export interface LearningSummary {
   key_points: string[];

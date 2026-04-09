@@ -5,9 +5,85 @@ const RUBY_PURIFY: import("dompurify").Config = {
   ALLOWED_ATTR: ["class"],
 };
 
+const VIS_PURIFY: import("dompurify").Config = {
+  ALLOWED_TAGS: [
+    "div",
+    "p",
+    "span",
+    "strong",
+    "em",
+    "br",
+    "ul",
+    "ol",
+    "li",
+    "table",
+    "thead",
+    "tbody",
+    "tr",
+    "th",
+    "td",
+    "figure",
+    "figcaption",
+    "code",
+    "pre",
+    "ruby",
+    "rt",
+    "rp",
+    "svg",
+    "g",
+    "path",
+    "line",
+    "rect",
+    "circle",
+    "ellipse",
+    "polygon",
+    "polyline",
+    "text",
+  ],
+  ALLOWED_ATTR: [
+    "class",
+    "role",
+    "aria-label",
+    "viewBox",
+    "width",
+    "height",
+    "x",
+    "y",
+    "x1",
+    "y1",
+    "x2",
+    "y2",
+    "cx",
+    "cy",
+    "r",
+    "rx",
+    "ry",
+    "d",
+    "points",
+    "fill",
+    "stroke",
+    "stroke-width",
+    "stroke-linecap",
+    "stroke-linejoin",
+    "stroke-dasharray",
+    "font-size",
+    "font-family",
+    "font-weight",
+    "text-anchor",
+    "opacity",
+    "transform",
+    "xmlns",
+  ],
+};
+
 /** Safe HTML for display: only ruby-related tags. */
 export function sanitizeRubyHtml(html: string): string {
   return DOMPurify.sanitize(html, RUBY_PURIFY);
+}
+
+/** Safe HTML for visualization block (supports simple tables/svg diagrams). */
+export function sanitizeVisualizationHtml(html: string): string {
+  return DOMPurify.sanitize(html, VIS_PURIFY);
 }
 
 /** Plain text for speech: each <ruby> block becomes its <rt> reading, then strip tags. */

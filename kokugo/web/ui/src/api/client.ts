@@ -6,6 +6,7 @@ import type {
   HealthResponse,
   OllamaCheckResponse,
   PrintLearningSummary,
+  SansuKotsuSummary,
   Question,
   QuestionCheckResult,
   SubmitResult,
@@ -79,9 +80,22 @@ export function createPrint(body: { title: string }) {
   });
 }
 
+export function createSansuPrint(body: { title: string }) {
+  return api<{ exerciseId: string; assignmentId: string }>("/api/sansu/prints", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 export function getPrint(assignmentId: string) {
   return api<{ print: AssignmentGroup; primaryExerciseId: string }>(
     `/api/prints/${encodeURIComponent(assignmentId)}`
+  );
+}
+
+export function getSansuPrint(assignmentId: string) {
+  return api<{ print: AssignmentGroup; primaryExerciseId: string }>(
+    `/api/sansu/prints/${encodeURIComponent(assignmentId)}`
   );
 }
 
@@ -96,6 +110,13 @@ export function patchPrintTitle(assignmentId: string, title: string) {
 export function ensureScanDraft(assignmentId: string) {
   return api<{ exerciseId: string }>(
     `/api/prints/${encodeURIComponent(assignmentId)}/ensure-scan-draft`,
+    { method: "POST" }
+  );
+}
+
+export function ensureSansuScanDraft(assignmentId: string) {
+  return api<{ exerciseId: string }>(
+    `/api/sansu/prints/${encodeURIComponent(assignmentId)}/ensure-scan-draft`,
     { method: "POST" }
   );
 }
@@ -185,6 +206,10 @@ export function listHistory() {
   return api<{ assignments: AssignmentGroup[] }>("/api/history");
 }
 
+export function listSansuHistory() {
+  return api<{ assignments: AssignmentGroup[] }>("/api/sansu/history");
+}
+
 export function monthlyReminders() {
   return api<{ cards: VocabCard[] }>("/api/reminders/monthly");
 }
@@ -198,4 +223,23 @@ export function transcribeAudio(blob: Blob, mimeHint: string) {
   const name = mimeHint.includes("mp4") || mimeHint.includes("aac") ? "answer.m4a" : "answer.webm";
   fd.append("audio", blob, name);
   return api<{ text: string }>("/api/transcribe", { method: "POST", body: fd });
+}
+
+export function summarizeSansuKotsu(file: File) {
+  const fd = new FormData();
+  fd.append("image", file);
+  return api<{ summary: SansuKotsuSummary }>("/api/sansu/kotsu", { method: "POST", body: fd });
+}
+
+export function summarizeSansuExerciseKotsu(exerciseId: string) {
+  return api<{ summary: SansuKotsuSummary }>(
+    `/api/sansu/exercises/${encodeURIComponent(exerciseId)}/kotsu`,
+    { method: "POST" }
+  );
+}
+
+export function getSansuExerciseKotsu(exerciseId: string) {
+  return api<{ summary: SansuKotsuSummary }>(
+    `/api/sansu/exercises/${encodeURIComponent(exerciseId)}/kotsu`
+  );
 }

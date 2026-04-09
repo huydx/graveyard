@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 )
 
 const geminiDocMaxOutputTokens int32 = 65536
 
-// OneShotParser runs one Gemini vision call per page, then concatenates exercises in page order.
+// OneShotParser runs one Gemini vision call per page, then concatenates exercises in reading order
+// (page_reading_order from the model when multi-page; otherwise upload order).
 type OneShotParser struct {
 	M                    ExerciseParseModel
 	ParseMaxOutputTokens int32
@@ -29,32 +31,55 @@ func oneShotUserText(pageIndex1, totalPages int) string {
 	if totalPages == 1 {
 		return OneShotSingleUser
 	}
-	return oneShotUserExtractionRules + "\n\n" + fmt.Sprintf(OneShotPageUser, pageIndex1, totalPages)
+	return oneShotUserExtractionRules + "\n\n" + fmt.Sprintf(OneShotPageUser, pageIndex1, totalPages, pageIndex1, totalPages, pageIndex1)
 }
 
 // decodeParsedPageJSON accepts either {"exercises":[...]} (週課・複数大問) or a legacy single ParsedExercise object.
-func decodeParsedPageJSON(text string) ([]ParsedExercise, error) {
+// pageReadingOrder is 0 when the model omitted page_reading_order (caller should fall back to upload slot index).
+func decodeParsedPageJSON(text string) ([]ParsedExercise, int, error) {
 	var probe map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(text), &probe); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if _, ok := probe["exercises"]; ok {
 		var bundle struct {
-			Exercises []ParsedExercise `json:"exercises"`
+			PageReadingOrder int              `json:"page_reading_order"`
+			Exercises        []ParsedExercise `json:"exercises"`
 		}
 		if err := json.Unmarshal([]byte(text), &bundle); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if len(bundle.Exercises) == 0 {
-			return nil, fmt.Errorf("exercises が空です")
+			return nil, 0, fmt.Errorf("exercises が空です")
 		}
-		return bundle.Exercises, nil
+		return bundle.Exercises, bundle.PageReadingOrder, nil
 	}
 	var single ParsedExercise
 	if err := json.Unmarshal([]byte(text), &single); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return []ParsedExercise{single}, nil
+	return []ParsedExercise{single}, 0, nil
+}
+
+// pageOrderedParse is one uploaded image's parse result before reordering multi-page scans.
+type pageOrderedParse struct {
+	readingOrder int
+	uploadIndex  int
+	exercises    []ParsedExercise
+}
+
+func sortPageOrderedParses(pages []pageOrderedParse) [][]ParsedExercise {
+	sort.SliceStable(pages, func(i, j int) bool {
+		if pages[i].readingOrder != pages[j].readingOrder {
+			return pages[i].readingOrder < pages[j].readingOrder
+		}
+		return pages[i].uploadIndex < pages[j].uploadIndex
+	})
+	out := make([][]ParsedExercise, len(pages))
+	for i := range pages {
+		out[i] = pages[i].exercises
+	}
+	return out
 }
 
 // concatParsedPages flattens per-page exercise lists in order (page1 ex1, ex2, … then page2 …).
@@ -107,7 +132,7 @@ func mergeParsedExercisesFromMultiPageScan(blocks []ParsedExercise) ParsedExerci
 	return ParsedExercise{Title: title, Passage: passage, Questions: questions}
 }
 
-func (p *OneShotParser) parseSinglePage(ctx context.Context, page ImagePart, pageIndex1, totalPages int) ([]ParsedExercise, error) {
+func (p *OneShotParser) parseSinglePage(ctx context.Context, page ImagePart, pageIndex1, totalPages int) ([]ParsedExercise, int, error) {
 	mime := page.MIME
 	if mime == "" {
 		mime = "image/jpeg"
@@ -126,20 +151,27 @@ func (p *OneShotParser) parseSinglePage(ctx context.Context, page ImagePart, pag
 		ThinkingBudget:   &z,
 	})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	text = StripMarkdownFence(text)
 	log.Printf("parse one_shot page=%d/%d response_chars=%d preview=%q", pageIndex1, totalPages, len(text), LogPreview(text))
 
-	list, err := decodeParsedPageJSON(text)
+	list, modelOrder, err := decodeParsedPageJSON(text)
 	if err != nil {
-		return nil, fmt.Errorf("one_shot JSON (page %d/%d): %w\nraw: %s", pageIndex1, totalPages, err, Truncate(text, 500))
+		return nil, 0, fmt.Errorf("one_shot JSON (page %d/%d): %w\nraw: %s", pageIndex1, totalPages, err, Truncate(text, 500))
+	}
+	readingOrder := modelOrder
+	if readingOrder <= 0 {
+		readingOrder = pageIndex1
+	}
+	if totalPages > 1 {
+		log.Printf("parse one_shot page=%d/%d page_reading_order=%d (model_raw=%d)", pageIndex1, totalPages, readingOrder, modelOrder)
 	}
 	for i := range list {
 		log.Printf("parse one_shot page=%d/%d block=%d title=%q passage_chars=%d questions=%d",
 			pageIndex1, totalPages, i+1, Truncate(list[i].Title, 60), len(list[i].Passage), len(list[i].Questions))
 	}
-	return list, nil
+	return list, readingOrder, nil
 }
 
 func (p *OneShotParser) ParseExercisePages(ctx context.Context, pages []ImagePart) ([]ParsedExercise, error) {
@@ -148,14 +180,15 @@ func (p *OneShotParser) ParseExercisePages(ctx context.Context, pages []ImagePar
 	}
 	n := len(pages)
 	log.Printf("parse one_shot_begin pages=%d (one request per page)", n)
-	var perPage [][]ParsedExercise
+	var ordered []pageOrderedParse
 	for i, page := range pages {
-		pe, err := p.parseSinglePage(ctx, page, i+1, n)
+		pe, readingOrder, err := p.parseSinglePage(ctx, page, i+1, n)
 		if err != nil {
 			return nil, err
 		}
-		perPage = append(perPage, pe)
+		ordered = append(ordered, pageOrderedParse{readingOrder: readingOrder, uploadIndex: i, exercises: pe})
 	}
+	perPage := sortPageOrderedParses(ordered)
 	merged := concatParsedPages(perPage)
 	if n > 1 && len(merged) > 0 {
 		merged = []ParsedExercise{mergeParsedExercisesFromMultiPageScan(merged)}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   checkQuestionAnswer,
@@ -14,13 +14,65 @@ import {
 import { useMediaRecorderAnswer } from "../hooks/useMediaRecorderAnswer";
 import ScanImageModal from "../components/ScanImageModal";
 import RubyHtml, { PassageRuby } from "../components/RubyHtml";
-import { furiganaToSpeechText } from "../lib/ruby";
+import { sanitizeRubyHtml } from "../lib/ruby";
 import { paths } from "../lib/paths";
 import * as L from "../lib/uiLabelsRuby";
 import type { AssignmentExerciseRef, Question, QuestionCheckResult } from "../types";
 
 const MAX_VOICE_RECORD_MS = 10_000;
 const LS_QUESTIONS_PANEL = "kokugo-exercise-questions-expanded";
+const SPEED_READING_MIN_WPM = 80;
+const SPEED_READING_MAX_WPM = 420;
+const SPEED_READING_DEFAULT_WPM = 180;
+
+function segmentPassageWords(text: string): string[] {
+  const cleaned = text.replace(/\s+/g, " ").trim();
+  if (!cleaned) return [];
+  if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
+    const segmenter = new Intl.Segmenter("ja", { granularity: "word" });
+    const words = Array.from(segmenter.segment(cleaned))
+      .map((part) => part.segment.trim())
+      .filter(Boolean);
+    if (words.length > 0) return words;
+  }
+  return Array.from(cleaned);
+}
+
+function segmentTextPreservingWords(text: string): string[] {
+  const cleaned = text.replace(/\s+/g, " ").trim();
+  if (!cleaned) return [];
+  if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
+    const segmenter = new Intl.Segmenter("ja", { granularity: "word" });
+    return Array.from(segmenter.segment(cleaned))
+      .map((part) => part.segment)
+      .filter((part) => part.trim().length > 0);
+  }
+  return Array.from(cleaned);
+}
+
+function passageToSpeedReadWordHtmls(html: string): string[] {
+  if (typeof document === "undefined") return segmentPassageWords(html);
+  const clean = sanitizeRubyHtml(html);
+  const root = document.createElement("div");
+  root.innerHTML = clean;
+  const tokens: string[] = [];
+  const walk = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      tokens.push(...segmentTextPreservingWords(node.textContent ?? ""));
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const el = node as HTMLElement;
+    if (el.tagName === "RUBY") {
+      tokens.push(el.outerHTML);
+      return;
+    }
+    if (el.tagName === "RT" || el.tagName === "RP" || el.tagName === "BR") return;
+    Array.from(el.childNodes).forEach(walk);
+  };
+  Array.from(root.childNodes).forEach(walk);
+  return tokens.filter((t) => t.trim().length > 0);
+}
 
 export default function ExercisePage() {
   const { id: rawId } = useParams<{ id: string }>();
@@ -49,6 +101,10 @@ export default function ExercisePage() {
     if (typeof window === "undefined") return true;
     return window.localStorage.getItem(LS_QUESTIONS_PANEL) !== "false";
   });
+  const [speedReadingMode, setSpeedReadingMode] = useState(false);
+  const [speedReadingPlaying, setSpeedReadingPlaying] = useState(false);
+  const [speedReadingWpm, setSpeedReadingWpm] = useState(SPEED_READING_DEFAULT_WPM);
+  const [speedReadingIdx, setSpeedReadingIdx] = useState(0);
 
   const isPressingMicRef = useRef(false);
   const holdRecordingActiveRef = useRef(false);
@@ -99,6 +155,31 @@ export default function ExercisePage() {
   }, [qIdx, cancelRecording, clearMaxRecordTimer]);
 
   const q = questions[qIdx];
+  const speedReadingWords = useMemo(() => passageToSpeedReadWordHtmls(passage), [passage]);
+
+  useEffect(() => {
+    setSpeedReadingPlaying(false);
+    setSpeedReadingIdx(0);
+  }, [passage]);
+
+  useEffect(() => {
+    if (!speedReadingMode || !speedReadingPlaying || speedReadingWords.length === 0) return;
+    if (speedReadingIdx >= speedReadingWords.length - 1) {
+      setSpeedReadingPlaying(false);
+      return;
+    }
+    const stepMs = Math.max(80, Math.round(60_000 / speedReadingWpm));
+    const timer = window.setInterval(() => {
+      setSpeedReadingIdx((i) => {
+        if (i >= speedReadingWords.length - 1) {
+          setSpeedReadingPlaying(false);
+          return i;
+        }
+        return i + 1;
+      });
+    }, stepMs);
+    return () => window.clearInterval(timer);
+  }, [speedReadingMode, speedReadingPlaying, speedReadingIdx, speedReadingWords.length, speedReadingWpm]);
 
   const setAnswer = useCallback((qid: string, val: string) => {
     setAnswers((a) => ({ ...a, [qid]: val }));
@@ -108,13 +189,6 @@ export default function ExercisePage() {
       return rest;
     });
   }, []);
-
-  const readPassage = () => {
-    const u = new SpeechSynthesisUtterance(furiganaToSpeechText(passage));
-    u.lang = "ja-JP";
-    u.rate = 0.92;
-    speechSynthesis.speak(u);
-  };
 
   const startWebSpeech = () => {
     if (!q || q.type !== "voice") return;
@@ -318,10 +392,67 @@ export default function ExercisePage() {
             <h2 className="passage-title">
               <RubyHtml html={title} />
             </h2>
-            <button type="button" className="btn btn-ghost" onClick={readPassage}>
-              <RubyHtml html={L.readAloud} />
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => {
+                setSpeedReadingMode((v) => {
+                  const next = !v;
+                  if (!next) setSpeedReadingPlaying(false);
+                  return next;
+                });
+              }}
+            >
+              <RubyHtml html={speedReadingMode ? L.speedReadToggleOff : L.speedReadToggleOn} />
             </button>
           </div>
+          {speedReadingMode && (
+            <div className="speed-reading-panel" role="region" aria-label="Speed reading">
+              <div className="speed-reading-controls">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    if (speedReadingIdx >= speedReadingWords.length - 1) setSpeedReadingIdx(0);
+                    setSpeedReadingPlaying((v) => !v);
+                  }}
+                  disabled={speedReadingWords.length === 0}
+                >
+                  <RubyHtml html={speedReadingPlaying ? L.speedReadPause : L.speedReadStart} />
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    setSpeedReadingPlaying(false);
+                    setSpeedReadingIdx(0);
+                  }}
+                  disabled={speedReadingWords.length === 0}
+                >
+                  <RubyHtml html={L.speedReadReset} />
+                </button>
+                <label className="speed-reading-slider-wrap">
+                  <span className="muted">
+                    <RubyHtml html={L.speedReadSpeed} />: {speedReadingWpm} {L.speedReadSpeedUnit}
+                  </span>
+                  <input
+                    type="range"
+                    min={SPEED_READING_MIN_WPM}
+                    max={SPEED_READING_MAX_WPM}
+                    step={10}
+                    value={speedReadingWpm}
+                    aria-label={L.speedReadAriaSlider}
+                    onChange={(e) => setSpeedReadingWpm(Number(e.target.value))}
+                  />
+                </label>
+              </div>
+              <div className="speed-reading-track" aria-live="polite">
+                <span className="muted">
+                  {speedReadingWords.length > 0 ? `${speedReadingIdx + 1}/${speedReadingWords.length}` : "—"}
+                </span>
+              </div>
+            </div>
+          )}
           {scanPageCount > 0 && (
             <div className="scan-page-strip exercise-scan-strip" aria-label="スキャンしたページ">
               <p className="muted scan-page-count">
@@ -347,7 +478,20 @@ export default function ExercisePage() {
             </div>
           )}
           <div className="passage-body">
-            <PassageRuby text={passage} />
+            {speedReadingMode ? (
+              <div className="passage-speed-text" aria-live="polite">
+                {speedReadingWords.map((word, idx) => (
+                  <span
+                    key={`${word}-${idx}`}
+                    className={"speed-reading-word" + (idx === speedReadingIdx ? " is-active" : "")}
+                  >
+                    <RubyHtml html={word} />
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <PassageRuby text={passage} />
+            )}
           </div>
         </article>
 

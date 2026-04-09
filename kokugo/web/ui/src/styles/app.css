@@ -886,9 +886,59 @@ h3 {
   line-height: 1.9;
   font-size: 1.1rem;
 }
+.speed-reading-panel {
+  border: 2px solid var(--blue-200);
+  border-radius: 14px;
+  background: var(--blue-100);
+  padding: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+.speed-reading-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem 0.75rem;
+}
+.speed-reading-slider-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 13rem;
+  flex: 1 1 14rem;
+}
+.speed-reading-slider-wrap input[type="range"] {
+  width: 100%;
+}
+.speed-reading-track {
+  margin-top: 0.65rem;
+  border-radius: 12px;
+  background: #fff;
+  padding: 0.65rem 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  line-height: 1.7;
+}
+.speed-reading-word {
+  padding: 0.03rem 0.12rem;
+  border-radius: 9px;
+  transition: background-color 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+.speed-reading-word.is-active {
+  background: var(--orange);
+  color: #fff;
+  font-weight: 800;
+  transform: translateY(-1px);
+}
 .passage-ruby p {
   margin: 0 0 0.75rem;
   line-height: 1.9;
+}
+.passage-speed-text {
+  line-height: 1.9;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.04rem;
 }
 .passage-ruby p:last-child {
   margin-bottom: 0;
@@ -1729,4 +1779,78 @@ rt {
 }
 .sansu-back {
   display: inline-flex;
+}
+.sansu-kotsu-card {
+  margin-bottom: 1rem;
+}
+.sansu-file-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.sansu-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.sansu-file-btn {
+  display: inline-flex;
+}
+.sansu-file-name {
+  font-size: 0.92rem;
+}
+.sansu-preview {
+  width: min(100%, 420px);
+  border-radius: 0.75rem;
+  border: 1px solid var(--line);
+  margin: 0.5rem 0;
+  display: block;
+}
+.sansu-kotsu-result h3 {
+  margin: 0.75rem 0 0.35rem;
+  color: var(--blue-900);
+  font-size: 1rem;
+}
+.sansu-kotsu-result p {
+  margin: 0;
+  line-height: 1.6;
+}
+.sansu-care-list {
+  margin: 0.4rem 0 0;
+  padding-left: 1.2rem;
+  line-height: 1.6;
+}
+.sansu-visual-actions {
+  margin: 0.4rem 0 0.7rem;
+}
+.sansu-summary-visual {
+  width: min(100%, 460px);
+  border-radius: 0.8rem;
+  border: 1px solid var(--line);
+  display: block;
+  background: #fff;
+}
+.sansu-visual-html {
+  margin: 0.5rem 0 0.8rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: #fbfdff;
+}
+.sansu-visual-html svg {
+  width: min(100%, 520px);
+  height: auto;
+  display: block;
+}
+.sansu-visual-html table {
+  border-collapse: collapse;
+  margin: 0.25rem 0;
+}
+.sansu-visual-html th,
+.sansu-visual-html td {
+  border: 1px solid var(--line);
+  padding: 0.25rem 0.5rem;
 }
