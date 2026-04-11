@@ -882,9 +882,110 @@ h3 {
   gap: 0.5rem;
   margin-bottom: 0.75rem;
 }
+.passage-mode-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  max-width: min(100%, 22rem);
+}
 .passage-body {
   line-height: 1.9;
   font-size: 1.1rem;
+}
+/* Explain mode: marker-style selection + highlighter cursor (still uses native range for accessibility). */
+.passage-body--explain {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+  touch-action: auto;
+  /* Chisel-shaped marker; hotspot at tip */
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23facc15' stroke='%23ca8a04' stroke-width='1.1' d='M5.5 21 9.2 5.2l3.1 1.2L8.4 21.2z' opacity='0.92'/%3E%3C/svg%3E")
+      6 20,
+    text;
+}
+.passage-body--explain .passage-ruby,
+.passage-body--explain .passage-ruby * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+.passage-body--explain ruby,
+.passage-body--explain rt,
+.passage-body--explain rp {
+  -webkit-user-select: text;
+  user-select: text;
+}
+.passage-body--explain ::selection,
+.passage-body--explain .passage-ruby ::selection,
+.passage-body--explain .passage-ruby *::selection {
+  background-color: rgba(250, 204, 21, 0.5);
+  color: inherit;
+}
+.passage-body--explain ::-moz-selection,
+.passage-body--explain .passage-ruby ::-moz-selection,
+.passage-body--explain .passage-ruby *::-moz-selection {
+  background-color: rgba(250, 204, 21, 0.5);
+  color: inherit;
+}
+/* web-highlighter wraps (説明モード) */
+.kokugo-explain-highlight {
+  background: linear-gradient(transparent 55%, rgba(250, 204, 21, 0.42) 55%);
+  border-radius: 3px;
+  cursor: text;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.explain-mode-panel {
+  border: 2px solid #86efac;
+  border-radius: 14px;
+  background: #ecfdf5;
+  padding: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+.explain-mode-hint {
+  margin: 0 0 0.55rem;
+  line-height: 1.55;
+  font-size: 0.98rem;
+}
+.explain-mode-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.explain-mode-error {
+  margin: 0.55rem 0 0;
+  color: #b91c1c;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.explain-mode-result {
+  margin-top: 0.75rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid #a7f3d0;
+}
+.explain-mode-block {
+  margin-bottom: 0.75rem;
+}
+.explain-mode-block:last-child {
+  margin-bottom: 0;
+}
+.explain-mode-subhead {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--blue-700);
+}
+.explain-keyword-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  line-height: 1.65;
+}
+.explain-mode-text {
+  margin: 0;
+  line-height: 1.75;
+  font-size: 1.02rem;
 }
 .speed-reading-panel {
   border: 2px solid var(--blue-200);
@@ -918,6 +1019,11 @@ h3 {
   flex-wrap: wrap;
   gap: 0.35rem;
   line-height: 1.7;
+}
+.speed-reading-fallback-hint {
+  flex: 1 1 100%;
+  font-size: 0.92rem;
+  margin: 0;
 }
 .speed-reading-word {
   padding: 0.03rem 0.12rem;
@@ -1783,6 +1889,15 @@ rt {
 .sansu-kotsu-card {
   margin-bottom: 1rem;
 }
+.sansu-kotsu-page-block {
+  margin-bottom: 1rem;
+}
+.sansu-kotsu-page-title {
+  margin: 0 0 0.65rem;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--blue-700);
+}
 .sansu-file-row {
   display: flex;
   align-items: center;
@@ -1823,16 +1938,6 @@ rt {
   padding-left: 1.2rem;
   line-height: 1.6;
 }
-.sansu-visual-actions {
-  margin: 0.4rem 0 0.7rem;
-}
-.sansu-summary-visual {
-  width: min(100%, 460px);
-  border-radius: 0.8rem;
-  border: 1px solid var(--line);
-  display: block;
-  background: #fff;
-}
 .sansu-visual-html {
   margin: 0.5rem 0 0.8rem;
   padding: 0.75rem;
@@ -1840,17 +1945,17 @@ rt {
   border-radius: 0.75rem;
   background: #fbfdff;
 }
-.sansu-visual-html svg {
-  width: min(100%, 520px);
+.sansu-viz-embed svg {
+  max-width: min(100%, 520px);
   height: auto;
   display: block;
 }
-.sansu-visual-html table {
+.sansu-viz-embed table {
   border-collapse: collapse;
   margin: 0.25rem 0;
 }
-.sansu-visual-html th,
-.sansu-visual-html td {
+.sansu-viz-embed th,
+.sansu-viz-embed td {
   border: 1px solid var(--line);
   padding: 0.25rem 0.5rem;
 }

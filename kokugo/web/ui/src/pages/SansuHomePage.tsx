@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { summarizeSansuKotsu } from "../api/client";
 import CameraModal from "../components/CameraModal";
 import RubyHtml from "../components/RubyHtml";
+import SansuKotsuVisualSection from "../components/SansuKotsuVisualSection";
 import { paths } from "../lib/paths";
 import * as L from "../lib/uiLabelsRuby";
 import type { SansuKotsuSummary } from "../types";
@@ -17,7 +18,7 @@ export default function SansuHomePage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [uploadStatus, setUploadStatus] = useState("");
-  const [summary, setSummary] = useState<SansuKotsuSummary | null>(null);
+  const [kotsuPages, setKotsuPages] = useState<SansuKotsuSummary[] | null>(null);
   const [cameraModalOpen, setCameraModalOpen] = useState(false);
 
   const [previewUrl, setPreviewUrl] = useState("");
@@ -40,7 +41,7 @@ export default function SansuHomePage() {
     setFile(next);
     setErr("");
     setUploadStatus(next ? L.sansuUploadOk : L.sansuImageRemoved);
-    setSummary(null);
+    setKotsuPages(null);
   };
 
   const onFileFromInput = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -58,7 +59,7 @@ export default function SansuHomePage() {
     setErr("");
     try {
       const res = await summarizeSansuKotsu(file);
-      setSummary(res.summary);
+      setKotsuPages(Array.isArray(res.pages) ? res.pages : []);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "エラー");
     } finally {
@@ -153,26 +154,34 @@ export default function SansuHomePage() {
           </p>
         ) : null}
       </div>
-      {summary ? (
-        <div className="card sansu-kotsu-result">
-          <h3>
-            <RubyHtml html={L.sansuMainIdeaHead} />
-          </h3>
-          <p>{summary.main_idea}</p>
-          <h3>
-            <RubyHtml html={L.sansuPatternHead} />
-          </h3>
-          <p>{summary.pattern}</p>
-          <h3>
-            <RubyHtml html={L.sansuCareHead} />
-          </h3>
-          <ul className="sansu-care-list">
-            {summary.care_points.map((it, i) => (
-              <li key={i}>{it}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+      {kotsuPages && kotsuPages.length > 0
+        ? kotsuPages.map((pg, pageIdx) => (
+            <div key={pageIdx} className="card sansu-kotsu-result sansu-kotsu-page-block">
+              {kotsuPages.length > 1 ? (
+                <h2 className="sansu-kotsu-page-title">
+                  <RubyHtml html={L.sansuKotsuPageTitle(pageIdx + 1)} />
+                </h2>
+              ) : null}
+              <h3>
+                <RubyHtml html={L.sansuMainIdeaHead} />
+              </h3>
+              <p>{pg.main_idea}</p>
+              <h3>
+                <RubyHtml html={L.sansuPatternHead} />
+              </h3>
+              <p>{pg.pattern}</p>
+              <h3>
+                <RubyHtml html={L.sansuCareHead} />
+              </h3>
+              <ul className="sansu-care-list">
+                {pg.care_points.map((it, i) => (
+                  <li key={i}>{it}</li>
+                ))}
+              </ul>
+              <SansuKotsuVisualSection summary={pg} />
+            </div>
+          ))
+        : null}
       <Link to={paths.home} className="btn btn-ghost sansu-back">
         <RubyHtml html={L.backToAppHub} />
       </Link>

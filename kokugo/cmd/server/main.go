@@ -4,7 +4,9 @@ import (
 	"context"
 	"io/fs"
 	"log"
+	"mime"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/huydx/kokugo/internal/api"
@@ -34,6 +36,9 @@ func main() {
 		log.Fatal(err)
 	}
 	mux.Handle("GET /assets/", http.StripPrefix("/", http.FileServer(http.FS(staticFS))))
+
+	// PWA: manifest, service worker, registerSW.js, workbox-*.js, icons (single path segment).
+	mux.HandleFunc("GET /{name}", serveStaticRootFile)
 
 	spaPaths := []string{
 		"GET /",
@@ -70,5 +75,28 @@ func serveSPA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(data)
+}
+
+func serveStaticRootFile(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" || strings.Contains(name, "/") || filepath.Base(name) != name || strings.Contains(name, "..") {
+		http.NotFound(w, r)
+		return
+	}
+	rel := "static/" + name
+	data, err := web.Static.ReadFile(rel)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	switch filepath.Ext(name) {
+	case ".webmanifest":
+		w.Header().Set("Content-Type", "application/manifest+json; charset=utf-8")
+	default:
+		if ct := mime.TypeByExtension(filepath.Ext(name)); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		}
+	}
 	_, _ = w.Write(data)
 }

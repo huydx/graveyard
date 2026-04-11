@@ -132,13 +132,13 @@ func (s *Server) SummarizeSansuKotsu(w http.ResponseWriter, r *http.Request) {
 	if mime == "" || mime == "application/octet-stream" {
 		mime = mimeForPath(hdr.Filename)
 	}
-	sum, err := ai.SummarizeMathExerciseKotsu(r.Context(), rt.summaryChat, rt.summaryModel, data, mime)
+	pages, err := ai.SummarizeMathExerciseKotsuPages(r.Context(), rt.summaryChat, rt.summaryModel, []ai.ImagePart{{Data: data, MIME: mime}})
 	if err != nil {
 		log.Printf("sansu_kotsu: %v", err)
 		s.err(w, http.StatusBadGateway, "算数のまとめ生成に失敗しました: "+err.Error())
 		return
 	}
-	s.json(w, http.StatusOK, map[string]any{"summary": sum})
+	s.json(w, http.StatusOK, map[string]any{"pages": pages})
 }
 
 func (s *Server) SummarizeSansuExerciseKotsu(w http.ResponseWriter, r *http.Request) {
@@ -169,22 +169,30 @@ func (s *Server) SummarizeSansuExerciseKotsu(w http.ResponseWriter, r *http.Requ
 		s.err(w, http.StatusBadRequest, "画像がありません")
 		return
 	}
-	data, err := os.ReadFile(paths[0])
-	if err != nil || len(data) == 0 {
-		s.err(w, http.StatusInternalServerError, "画像ファイルを読めません")
+	if len(paths) > maxExercisePages {
+		s.err(w, http.StatusBadRequest, "ページが多すぎます（最大12枚）")
 		return
 	}
-	sum, err := ai.SummarizeMathExerciseKotsu(r.Context(), rt.summaryChat, rt.summaryModel, data, mimeForPath(paths[0]))
+	var parts []ai.ImagePart
+	for _, p := range paths {
+		data, rerr := os.ReadFile(p)
+		if rerr != nil || len(data) == 0 {
+			s.err(w, http.StatusInternalServerError, "画像ファイルを読めません")
+			return
+		}
+		parts = append(parts, ai.ImagePart{Data: data, MIME: mimeForPath(p)})
+	}
+	pages, err := ai.SummarizeMathExerciseKotsuPages(r.Context(), rt.summaryChat, rt.summaryModel, parts)
 	if err != nil {
 		log.Printf("sansu_exercise_kotsu: %v", err)
 		s.err(w, http.StatusBadGateway, "算数のまとめ生成に失敗しました: "+err.Error())
 		return
 	}
-	raw, err := json.Marshal(sum)
-	if err == nil {
-		_ = s.Store.SaveSummary(r.Context(), id, string(raw))
+	raw, mErr := ai.MarshalKotsuPagesJSON(pages)
+	if mErr == nil {
+		_ = s.Store.SaveSummary(r.Context(), id, raw)
 	}
-	s.json(w, http.StatusOK, map[string]any{"summary": sum})
+	s.json(w, http.StatusOK, map[string]any{"pages": pages})
 }
 
 func (s *Server) GetSansuExerciseKotsu(w http.ResponseWriter, r *http.Request) {
@@ -202,12 +210,12 @@ func (s *Server) GetSansuExerciseKotsu(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusNotFound, "まだありません")
 		return
 	}
-	var sum ai.MathExerciseKotsuSummary
-	if err := json.Unmarshal([]byte(j), &sum); err != nil {
+	pages, err := ai.ParseKotsuPagesFromStorageJSON(j)
+	if err != nil {
 		s.err(w, http.StatusInternalServerError, "まとめの形式が壊れています")
 		return
 	}
-	s.json(w, http.StatusOK, map[string]any{"summary": sum})
+	s.json(w, http.StatusOK, map[string]any{"pages": pages})
 }
 
 func (s *Server) UploadScan(w http.ResponseWriter, r *http.Request) {
@@ -1357,6 +1365,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/exercises/{id}/submit", s.SubmitAnswers)
 	mux.HandleFunc("POST /api/exercises/{id}/questions/{questionId}/check", s.CheckQuestion)
 	mux.HandleFunc("GET /api/exercises/{id}/questions/{questionId}/solution", s.GetQuestionSolution)
+	mux.HandleFunc("POST /api/exercises/{id}/explain-selection", s.ExplainPassageSelection)
+	mux.HandleFunc("GET /api/exercises/{id}/speed-read-segments", s.SpeedReadSegments)
 	mux.HandleFunc("POST /api/prints/{id}/summary", s.GeneratePrintSummary)
 	mux.HandleFunc("GET /api/prints/{id}/summary", s.GetPrintSummary)
 	mux.HandleFunc("GET /api/history", s.History)

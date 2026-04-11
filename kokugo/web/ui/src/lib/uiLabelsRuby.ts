@@ -33,9 +33,15 @@ export const sansuNewPrintHead = `<ruby>新<rt>あたら</rt></ruby>しい<ruby>
 export const sansuNewPrintLead = `<ruby>名前<rt>なまえ</rt></ruby>をいれて<ruby>保存<rt>ほぞん</rt></ruby>すると、スキャンページにすすみます。`;
 export const sansuPrintNameLabel = `<ruby>算数<rt>さんすう</rt></ruby>プリントの<ruby>名前<rt>なまえ</rt></ruby>`;
 export const sansuCreatePrint = `<ruby>保存<rt>ほぞん</rt></ruby>してスキャンへ`;
-export const sansuVisualHead = `まとめのイメージ`;
-export const sansuVisualCreate = `イメージをつくる`;
-export const sansuVisualRecreate = `イメージをつくりなおす`;
+export const sansuVisualHead = `考え方を<ruby>図<rt>ず</rt></ruby>で`;
+export const sansuVizSanitizeBlocked = `<ruby>図<rt>ず</rt></ruby>のHTMLはとどきましたが、<ruby>安全<rt>あんぜん</rt></ruby>チェックではずされました。もういちど「AIでコツをまとめる」をためしてください。`;
+export const sansuVisualIdeasLead = `この<ruby>問題<rt>もんだい</rt></ruby>を<ruby>図<rt>ず</rt></ruby>にすると、たとえば次のようなイメージです。`;
+export const sansuVisualNone = `このまとめには<ruby>図<rt>ず</rt></ruby>のHTMLがありません。いちど「AIでコツをまとめる」をもう一度おして、あたらしくまとめてください（むかしのデータにはHTMLがないことがあります）。`;
+
+/** Multi-page scan: 1-based page label (render with RubyHtml). */
+export function sansuKotsuPageTitle(page1: number): string {
+  return `<ruby>ページ<rt>ぺーじ</rt></ruby> ${page1}`;
+}
 
 /** Kokugo mini-app name in sidebar (under super-app home link). */
 export const brandTitle = `<ruby>国語<rt>こくご</rt></ruby>アトリエ`;
@@ -113,12 +119,24 @@ export const wordsPoints = `ことば・ポイント（<ruby>最大<rt>さいだ
 
 export const speedReadToggleOn = `<ruby>速読<rt>そくどく</rt></ruby>モード`;
 export const speedReadToggleOff = `<ruby>速読<rt>そくどく</rt></ruby>を<ruby>閉<rt>と</rt></ruby>じる`;
+export const explainModeToggleOn = `<ruby>説明<rt>せつめい</rt></ruby>モード`;
+export const explainModeToggleOff = `<ruby>説明<rt>せつめい</rt></ruby>を<ruby>閉<rt>と</rt></ruby>じる`;
+export const explainModeHint =
+  `スマホはなぞってから<ruby>指<rt>ゆび</rt></ruby>を<ruby>離<rt>はな</rt></ruby>すと<ruby>黄色<rt>きいろ</rt></ruby>の<ruby>印<rt>しるし</rt></ruby>がつきます。そのあと「<ruby>説明<rt>せつめい</rt></ruby>する」をおす（PCも<ruby>同<rt>おな</rt></ruby>じ）`;
+export const explainModeButton = `<ruby>説明<rt>せつめい</rt></ruby>する`;
+export const explainModeBusy = `<ruby>説明<rt>せつめい</rt></ruby>をつくっている…`;
+export const explainModeKeywords = `<ruby>大事<rt>だいじ</rt></ruby>なことば`;
+export const explainModeMeaning = `<ruby>意味<rt>いみ</rt></ruby>（やく）`;
+export const explainModeDetail = `くわしい<ruby>説明<rt>せつめい</rt></ruby>`;
+export const explainModeAriaPanel = `<ruby>説明<rt>せつめい</rt></ruby>モード`;
 export const speedReadStart = `<ruby>開始<rt>かいし</rt></ruby>`;
 export const speedReadPause = `<ruby>一時停止<rt>いちじていし</rt></ruby>`;
 export const speedReadReset = `<ruby>最初<rt>さいしょ</rt></ruby>にもどす`;
 export const speedReadSpeed = `<ruby>速<rt>はや</rt></ruby>さ`;
-export const speedReadSpeedUnit = `語/分`;
+export const speedReadSpeedUnit = `<ruby>文節<rt>ぶんせつ</rt></ruby>/分`;
 export const speedReadAriaSlider = `<ruby>速読<rt>そくどく</rt></ruby>の<ruby>速<rt>はや</rt></ruby>さ`;
+export const speedReadBunsetsuLoading = `<ruby>文節<rt>ぶんせつ</rt></ruby>を<ruby>準備<rt>じゅんび</rt></ruby>しています…`;
+export const speedReadBunsetsuFallback = `<ruby>文節<rt>ぶんせつ</rt></ruby>が<ruby>使<rt>つか</rt></ruby>えないときはことば<ruby>単位<rt>たんい</rt></ruby>です`;
 export const scanPagesLabel = (n: number) =>
   `${n} <ruby>枚<rt>まい</rt></ruby>のプリント（サムネをタップで<ruby>大<rt>おお</rt></ruby>きく<ruby>見<rt>み</rt></ruby>る）`;
 export const ariaEnlargePage = (i: number) =>

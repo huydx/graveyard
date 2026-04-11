@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { sanitizeRubyHtml } from "../lib/ruby";
 
 type Props = { html: string; className?: string; as?: "span" | "div" | "p" | "h1" | "h2" };
@@ -10,8 +11,12 @@ export default function RubyHtml({ html, className, as: Tag = "span" }: Props) {
   return <Tag className={className} dangerouslySetInnerHTML={{ __html: clean }} />;
 }
 
-/** Passage with paragraph breaks. */
-export function PassageRuby({ text }: { text: string }) {
+/**
+ * Passage with paragraph breaks.
+ * Memoized so parent state updates (e.g. 説明モード selection text) do not re-apply innerHTML and strip
+ * web-highlighter's DOM wraps.
+ */
+export const PassageRuby = memo(function PassageRuby({ text }: { text: string }) {
   const paras = text.split(/\n+/).filter(Boolean);
   return (
     <div className="passage-ruby">
@@ -22,4 +27,4 @@ export function PassageRuby({ text }: { text: string }) {
       ))}
     </div>
   );
-}
+}, (prev, next) => prev.text === next.text);

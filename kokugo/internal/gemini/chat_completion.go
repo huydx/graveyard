@@ -35,6 +35,8 @@ func (c *Client) CreateChatCompletion(ctx context.Context, req ai.ChatCompletion
 			cfg.ResponseSchema = schemaAnswerJudgment(&maxR)
 		case ai.ChatGeminiStructuredMathExerciseKotsu:
 			cfg.ResponseSchema = schemaMathExerciseKotsu()
+		case ai.ChatGeminiStructuredPassageSelectionExplain:
+			cfg.ResponseSchema = schemaPassageSelectionExplain()
 		}
 	}
 

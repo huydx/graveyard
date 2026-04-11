@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   checkQuestionAnswer,
+  explainPassageSelection,
   getExercise,
   getQuestionSolution,
+  getSpeedReadSegments,
   submitAnswers,
   transcribeAudio,
 } from "../api/client";
@@ -12,6 +14,7 @@ import {
   shouldUseBrowserSpeechRecognition,
 } from "../hooks/createJaSpeechRecognition";
 import { useMediaRecorderAnswer } from "../hooks/useMediaRecorderAnswer";
+import { useWebHighlighterExplain } from "../hooks/useWebHighlighterExplain";
 import ScanImageModal from "../components/ScanImageModal";
 import RubyHtml, { PassageRuby } from "../components/RubyHtml";
 import { sanitizeRubyHtml } from "../lib/ruby";
@@ -24,6 +27,7 @@ const LS_QUESTIONS_PANEL = "kokugo-exercise-questions-expanded";
 const SPEED_READING_MIN_WPM = 80;
 const SPEED_READING_MAX_WPM = 420;
 const SPEED_READING_DEFAULT_WPM = 180;
+const EXPLAIN_SELECTION_MAX_RUNES = 400;
 
 function segmentPassageWords(text: string): string[] {
   const cleaned = text.replace(/\s+/g, " ").trim();
@@ -105,7 +109,22 @@ export default function ExercisePage() {
   const [speedReadingPlaying, setSpeedReadingPlaying] = useState(false);
   const [speedReadingWpm, setSpeedReadingWpm] = useState(SPEED_READING_DEFAULT_WPM);
   const [speedReadingIdx, setSpeedReadingIdx] = useState(0);
+  const [speedReadHtmlSegments, setSpeedReadHtmlSegments] = useState<string[] | null>(null);
+  const [speedReadSegmentsState, setSpeedReadSegmentsState] = useState<"idle" | "loading" | "ok" | "error">(
+    "idle"
+  );
+  const speedSegCacheRef = useRef<{ passage: string; segments: string[] } | null>(null);
+  const [explainMode, setExplainMode] = useState(false);
+  const [explainSelection, setExplainSelection] = useState("");
+  const [explainBusy, setExplainBusy] = useState(false);
+  const [explainErr, setExplainErr] = useState("");
+  const [explainResult, setExplainResult] = useState<{
+    importantKeywords: string[];
+    shortMeaning: string;
+    explanation: string;
+  } | null>(null);
 
+  const [passageBodyEl, setPassageBodyEl] = useState<HTMLDivElement | null>(null);
   const isPressingMicRef = useRef(false);
   const holdRecordingActiveRef = useRef(false);
   const maxRecordTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -141,6 +160,9 @@ export default function ExercisePage() {
         const sibs = d.assignment?.exercises;
         setAssignmentSiblings(sibs && sibs.length > 1 ? sibs : []);
         setPrintAssignmentId(d.exercise.assignmentId?.trim() ? d.exercise.assignmentId : "");
+        setExplainSelection("");
+        setExplainErr("");
+        setExplainResult(null);
       })
       .catch((e) => setLoadErr(e instanceof Error ? e.message : "エラー"));
   }, [id]);
@@ -155,12 +177,84 @@ export default function ExercisePage() {
   }, [qIdx, cancelRecording, clearMaxRecordTimer]);
 
   const q = questions[qIdx];
-  const speedReadingWords = useMemo(() => passageToSpeedReadWordHtmls(passage), [passage]);
+  const speedReadingWords = useMemo(() => {
+    if (speedReadingMode && speedReadSegmentsState === "loading") {
+      return [];
+    }
+    if (speedReadHtmlSegments !== null && speedReadHtmlSegments.length > 0) {
+      return speedReadHtmlSegments;
+    }
+    return passageToSpeedReadWordHtmls(passage);
+  }, [speedReadingMode, speedReadSegmentsState, speedReadHtmlSegments, passage]);
 
   useEffect(() => {
     setSpeedReadingPlaying(false);
     setSpeedReadingIdx(0);
+    setExplainSelection("");
+    setExplainErr("");
+    setExplainResult(null);
   }, [passage]);
+
+  useEffect(() => {
+    speedSegCacheRef.current = null;
+    setSpeedReadHtmlSegments(null);
+    setSpeedReadSegmentsState("idle");
+  }, [passage]);
+
+  useEffect(() => {
+    if (!speedReadingMode) {
+      setSpeedReadSegmentsState("idle");
+    }
+  }, [speedReadingMode]);
+
+  useEffect(() => {
+    if (!speedReadingMode || !id || !passage.trim()) {
+      return;
+    }
+    const hit = speedSegCacheRef.current;
+    if (hit?.passage === passage && hit.segments.length > 0) {
+      setSpeedReadHtmlSegments(hit.segments);
+      setSpeedReadSegmentsState("ok");
+      return;
+    }
+    let cancelled = false;
+    setSpeedReadSegmentsState("loading");
+    getSpeedReadSegments(id)
+      .then((res) => {
+        if (cancelled) return;
+        const segs = res.htmlSegments ?? [];
+        if (segs.length > 0) {
+          speedSegCacheRef.current = { passage, segments: segs };
+          setSpeedReadHtmlSegments(segs);
+          setSpeedReadSegmentsState("ok");
+        } else {
+          setSpeedReadHtmlSegments(null);
+          setSpeedReadSegmentsState("ok");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSpeedReadHtmlSegments(null);
+          setSpeedReadSegmentsState("error");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [speedReadingMode, id, passage]);
+
+  const onExplainHlText = useCallback((text: string) => {
+    setExplainSelection(text);
+    setExplainErr("");
+  }, []);
+
+  const { clearVisual: clearExplainHighlight } = useWebHighlighterExplain({
+    enabled: explainMode && !speedReadingMode,
+    root: passageBodyEl,
+    passageKey: passage,
+    maxRunes: EXPLAIN_SELECTION_MAX_RUNES,
+    onSelectText: onExplainHlText,
+  });
 
   useEffect(() => {
     if (!speedReadingMode || !speedReadingPlaying || speedReadingWords.length === 0) return;
@@ -342,6 +436,23 @@ export default function ExercisePage() {
   const check = q ? checks[q.id] : undefined;
   const scorable = q && needsCheck(q);
 
+  const runExplain = useCallback(async () => {
+    if (!id || !explainSelection.trim()) return;
+    setExplainBusy(true);
+    setExplainErr("");
+    try {
+      const res = await explainPassageSelection(id, explainSelection);
+      setExplainResult(res);
+      window.getSelection()?.removeAllRanges();
+      clearExplainHighlight();
+      setExplainSelection("");
+    } catch (e) {
+      setExplainErr(e instanceof Error ? e.message : "エラー");
+    } finally {
+      setExplainBusy(false);
+    }
+  }, [id, explainSelection, clearExplainHighlight]);
+
   if (loadErr) {
     return (
       <div className="card">
@@ -392,20 +503,75 @@ export default function ExercisePage() {
             <h2 className="passage-title">
               <RubyHtml html={title} />
             </h2>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => {
-                setSpeedReadingMode((v) => {
-                  const next = !v;
-                  if (!next) setSpeedReadingPlaying(false);
-                  return next;
-                });
-              }}
-            >
-              <RubyHtml html={speedReadingMode ? L.speedReadToggleOff : L.speedReadToggleOn} />
-            </button>
+            <div className="passage-mode-toggles">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setSpeedReadingMode(false);
+                  setSpeedReadingPlaying(false);
+                  setExplainMode((v) => {
+                    const next = !v;
+                    if (!next) {
+                      setExplainSelection("");
+                      setExplainErr("");
+                      setExplainResult(null);
+                    }
+                    return next;
+                  });
+                }}
+              >
+                <RubyHtml html={explainMode ? L.explainModeToggleOff : L.explainModeToggleOn} />
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setExplainMode(false);
+                  setExplainSelection("");
+                  setExplainErr("");
+                  setExplainResult(null);
+                  setSpeedReadingMode((v) => {
+                    const next = !v;
+                    if (!next) setSpeedReadingPlaying(false);
+                    return next;
+                  });
+                }}
+              >
+                <RubyHtml html={speedReadingMode ? L.speedReadToggleOff : L.speedReadToggleOn} />
+              </button>
+            </div>
           </div>
+          {explainMode && (
+            <div className="explain-mode-panel" role="region" aria-label={L.explainModeAriaPanel}>
+              <p className="muted explain-mode-hint">
+                <RubyHtml html={L.explainModeHint} />
+              </p>
+              <div className="explain-mode-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={!explainSelection.trim() || explainBusy}
+                  onClick={() => void runExplain()}
+                >
+                  {explainBusy ? <RubyHtml html={L.explainModeBusy} /> : <RubyHtml html={L.explainModeButton} />}
+                </button>
+              </div>
+              {explainErr ? <p className="explain-mode-error">{explainErr}</p> : null}
+              {explainResult ? (
+                <div className="explain-mode-result" aria-live="polite">
+                  <div className="explain-mode-block">
+                    <h3 className="explain-mode-subhead">
+                      <RubyHtml html={L.explainModeDetail} />
+                    </h3>
+                    <p className="explain-mode-text">
+                      <RubyHtml html={explainResult.explanation} as="span" />
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )}
           {speedReadingMode && (
             <div className="speed-reading-panel" role="region" aria-label="Speed reading">
               <div className="speed-reading-controls">
@@ -447,9 +613,22 @@ export default function ExercisePage() {
                 </label>
               </div>
               <div className="speed-reading-track" aria-live="polite">
-                <span className="muted">
-                  {speedReadingWords.length > 0 ? `${speedReadingIdx + 1}/${speedReadingWords.length}` : "—"}
-                </span>
+                {speedReadSegmentsState === "loading" ? (
+                  <span className="muted">
+                    <RubyHtml html={L.speedReadBunsetsuLoading} />
+                  </span>
+                ) : (
+                  <>
+                    <span className="muted">
+                      {speedReadingWords.length > 0 ? `${speedReadingIdx + 1}/${speedReadingWords.length}` : "—"}
+                    </span>
+                    {speedReadSegmentsState === "error" && (
+                      <div className="speed-reading-fallback-hint muted">
+                        <RubyHtml html={L.speedReadBunsetsuFallback} />
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -477,7 +656,10 @@ export default function ExercisePage() {
               </div>
             </div>
           )}
-          <div className="passage-body">
+          <div
+            className={"passage-body" + (explainMode && !speedReadingMode ? " passage-body--explain" : "")}
+            ref={setPassageBodyEl}
+          >
             {speedReadingMode ? (
               <div className="passage-speed-text" aria-live="polite">
                 {speedReadingWords.map((word, idx) => (

@@ -6,7 +6,7 @@ import type {
   HealthResponse,
   OllamaCheckResponse,
   PrintLearningSummary,
-  SansuKotsuSummary,
+  SansuKotsuPagesResponse,
   Question,
   QuestionCheckResult,
   SubmitResult,
@@ -190,6 +190,29 @@ export function getQuestionSolution(exerciseId: string, questionId: string) {
   );
 }
 
+export type PassageExplainResult = {
+  importantKeywords: string[];
+  shortMeaning: string;
+  explanation: string;
+};
+
+/** Uses the same chat backend as exercise scoring (Gemini judge model or Ollama チャット用 model). */
+export function explainPassageSelection(exerciseId: string, selection: string) {
+  return api<PassageExplainResult>(`/api/exercises/${encodeURIComponent(exerciseId)}/explain-selection`, {
+    method: "POST",
+    body: JSON.stringify({ selection }),
+  });
+}
+
+export type SpeedReadSegmentsResponse = { htmlSegments: string[] };
+
+/** Bunsetsu chunks for speed reading (same chat backend/model as print summary). GET may return 503 if AI is not configured. */
+export function getSpeedReadSegments(exerciseId: string) {
+  return api<SpeedReadSegmentsResponse>(
+    `/api/exercises/${encodeURIComponent(exerciseId)}/speed-read-segments`
+  );
+}
+
 export function generatePrintSummary(assignmentId: string) {
   return api<{ summary: PrintLearningSummary }>(
     `/api/prints/${encodeURIComponent(assignmentId)}/summary`,
@@ -228,18 +251,16 @@ export function transcribeAudio(blob: Blob, mimeHint: string) {
 export function summarizeSansuKotsu(file: File) {
   const fd = new FormData();
   fd.append("image", file);
-  return api<{ summary: SansuKotsuSummary }>("/api/sansu/kotsu", { method: "POST", body: fd });
+  return api<SansuKotsuPagesResponse>("/api/sansu/kotsu", { method: "POST", body: fd });
 }
 
 export function summarizeSansuExerciseKotsu(exerciseId: string) {
-  return api<{ summary: SansuKotsuSummary }>(
+  return api<SansuKotsuPagesResponse>(
     `/api/sansu/exercises/${encodeURIComponent(exerciseId)}/kotsu`,
     { method: "POST" }
   );
 }
 
 export function getSansuExerciseKotsu(exerciseId: string) {
-  return api<{ summary: SansuKotsuSummary }>(
-    `/api/sansu/exercises/${encodeURIComponent(exerciseId)}/kotsu`
-  );
+  return api<SansuKotsuPagesResponse>(`/api/sansu/exercises/${encodeURIComponent(exerciseId)}/kotsu`);
 }

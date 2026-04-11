@@ -104,6 +104,11 @@ export interface SansuKotsuSummary {
   visualization_html?: string;
 }
 
+/** API response for POST/GET …/sansu/…/kotsu */
+export interface SansuKotsuPagesResponse {
+  pages: SansuKotsuSummary[];
+}
+
 /** @deprecated Per-exercise summary; API uses print-level summary now. */
 export interface LearningSummary {
   key_points: string[];

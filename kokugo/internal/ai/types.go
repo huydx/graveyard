@@ -51,6 +51,13 @@ type PrintLearningSummary struct {
 	KeywordCards []PrintKeywordCard `json:"keyword_cards"`
 }
 
+// PassageSelectionExplain is a kid-friendly gloss for a highlighted slice of reading passage HTML.
+type PassageSelectionExplain struct {
+	ImportantKeywords []string `json:"important_keywords"`
+	ShortMeaning      string   `json:"short_meaning"`
+	Explanation       string   `json:"explanation"`
+}
+
 // MathExerciseKotsuSummary is a kid-friendly tips summary for one math exercise image.
 type MathExerciseKotsuSummary struct {
 	MainIdea           string   `json:"main_idea"`

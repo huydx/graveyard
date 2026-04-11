@@ -156,20 +156,20 @@ func schemaPrintLearningSummary() *genai.Schema {
 	}
 }
 
-func schemaMathExerciseKotsu() *genai.Schema {
+func schemaMathExerciseKotsuPageItem() *genai.Schema {
 	maxMain := int64(220)
 	maxPattern := int64(220)
 	maxCare := int64(120)
 	maxCareItems := int64(5)
 	maxVis := int64(140)
 	maxVisItems := int64(4)
-	maxVisHTML := int64(4000)
+	maxVisHTML := int64(12000)
 	return &genai.Schema{
 		Type: genai.TypeObject,
 		Properties: map[string]*genai.Schema{
 			"main_idea": {
 				Type:        genai.TypeString,
-				Description: "この問題で何をするかを小学生向けに短く説明",
+				Description: "このページの問題で何をするかを小学生向けに短く説明",
 				MaxLength:   &maxMain,
 			},
 			"pattern": {
@@ -197,10 +197,61 @@ func schemaMathExerciseKotsu() *genai.Schema {
 			},
 			"visualization_html": {
 				Type:        genai.TypeString,
-				Description: "子ども向け図解HTML（div/p/ul/li/table/svgなど）。答えは書かず、考え方を見せる。",
+				Description: "このページ用の図解HTML（div/p/style/svg/animate可）。script禁止。答え数値は書かない。複数ページ時は短めに。",
 				MaxLength:   &maxVisHTML,
 			},
 		},
-		Required: []string{"main_idea", "pattern", "care_points"},
+		Required: []string{"main_idea", "pattern", "care_points", "visualization_html"},
+	}
+}
+
+func schemaMathExerciseKotsu() *genai.Schema {
+	minPages := int64(1)
+	maxPages := int64(12)
+	return &genai.Schema{
+		Type: genai.TypeObject,
+		Properties: map[string]*genai.Schema{
+			"pages": {
+				Type:        genai.TypeArray,
+				Description: "独立した算数の問題ごとに1要素。1枚に複数問題があれば複数要素。複数画像はページ1→2→…の順で各ページ内の問題を並べる。要素数は画像枚数以上（枚数より多くてよい）。各画像に少なくとも1問あれば要素数は少なくとも画像枚数。",
+				MinItems:    &minPages,
+				MaxItems:    &maxPages,
+				Items:       schemaMathExerciseKotsuPageItem(),
+			},
+		},
+		Required: []string{"pages"},
+	}
+}
+
+func schemaPassageSelectionExplain() *genai.Schema {
+	maxKW := int64(6)
+	maxKWItem := int64(80)
+	maxShort := int64(280)
+	maxExpl := int64(2200)
+	return &genai.Schema{
+		Type: genai.TypeObject,
+		Properties: map[string]*genai.Schema{
+			"important_keywords": {
+				Type: genai.TypeArray,
+				Items: &genai.Schema{
+					Type:        genai.TypeString,
+					Description: "この部分でおぼえておきたい短いことば（ruby可）",
+					MaxLength:   &maxKWItem,
+				},
+				MaxItems:    &maxKW,
+				Description: "2〜6個の重要語句",
+			},
+			"short_meaning": {
+				Type:        genai.TypeString,
+				Description: "選んだ部分が何を言っているか1〜2文。漢字はruby付き",
+				MaxLength:   &maxShort,
+			},
+			"explanation": {
+				Type:        genai.TypeString,
+				Description: "キーワードの意味や文脈での役割を2〜5文で。漢字はruby付き",
+				MaxLength:   &maxExpl,
+			},
+		},
+		Required: []string{"important_keywords", "short_meaning", "explanation"},
 	}
 }
