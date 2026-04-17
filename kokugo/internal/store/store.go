@@ -102,6 +102,18 @@ func (s *Store) migrate() error {
 		);`,
 		`INSERT OR IGNORE INTO app_settings (id, ollama_base_url, parse_strategy, google_api_key, updated_at)
 		 VALUES (1, '', '', '', strftime('%Y-%m-%dT%H:%M:%SZ','now'));`,
+		`CREATE TABLE IF NOT EXISTS weekly_digests (
+			id TEXT PRIMARY KEY,
+			topic TEXT NOT NULL,
+			sub_topic TEXT NOT NULL,
+			content TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'stocked',
+			created_at TEXT NOT NULL,
+			completed_at TEXT
+		);`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_digests_sub_topic_unique ON weekly_digests(sub_topic);`,
+		`CREATE INDEX IF NOT EXISTS idx_weekly_digests_topic_status_created
+			ON weekly_digests(topic, status, datetime(created_at));`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
@@ -149,6 +161,11 @@ func (s *Store) migrate() error {
 			}
 		}
 	}
+	if _, err := s.db.Exec(`ALTER TABLE app_settings ADD COLUMN digest_topic TEXT NOT NULL DEFAULT ''`); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+			return fmt.Errorf("migrate app_settings digest_topic: %w", err)
+		}
+	}
 	if _, err := s.db.Exec(`ALTER TABLE app_settings ADD COLUMN ocr_server_url TEXT NOT NULL DEFAULT ''`); err != nil {
 		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
 			return fmt.Errorf("migrate app_settings ocr_server_url: %w", err)
@@ -194,6 +211,20 @@ func (s *Store) migrate() error {
 	if _, err := s.db.Exec(`ALTER TABLE assignments ADD COLUMN title TEXT NOT NULL DEFAULT ''`); err != nil {
 		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
 			return fmt.Errorf("migrate assignments title: %w", err)
+		}
+	}
+	for _, col := range []struct {
+		name string
+		typ  string
+	}{
+		{"speed_read_segments_json", `TEXT NOT NULL DEFAULT ''`},
+		{"speed_read_segments_passage", `TEXT NOT NULL DEFAULT ''`},
+	} {
+		q := `ALTER TABLE exercises ADD COLUMN ` + col.name + ` ` + col.typ
+		if _, err := s.db.Exec(q); err != nil {
+			if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+				return fmt.Errorf("migrate exercises %s: %w", col.name, err)
+			}
 		}
 	}
 	return nil
@@ -246,18 +277,19 @@ func (s *Store) backfillAssignments() error {
 // --- Exercises ---
 
 type Exercise struct {
-	ID             string     `json:"id"`
-	Title          string     `json:"title"`
-	Passage        string     `json:"passage"`
-	ImagePath      string     `json:"imagePath"`
-	ImagePaths     []string   `json:"imagePaths,omitempty"`
-	Status         string     `json:"status"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	CompletedAt    *time.Time `json:"completedAt,omitempty"`
-	AnswersJSON    string     `json:"answersJson,omitempty"`
-	ScorePercent   int        `json:"scorePercent"`
-	AssignmentID   string     `json:"assignmentId,omitempty"`
-	AssignmentSort int        `json:"assignmentSort"`
+	ID                    string     `json:"id"`
+	Title                 string     `json:"title"`
+	Passage               string     `json:"passage"`
+	ImagePath             string     `json:"imagePath"`
+	ImagePaths            []string   `json:"imagePaths,omitempty"`
+	Status                string     `json:"status"`
+	CreatedAt             time.Time  `json:"createdAt"`
+	CompletedAt           *time.Time `json:"completedAt,omitempty"`
+	AnswersJSON           string     `json:"answersJson,omitempty"`
+	ScorePercent          int        `json:"scorePercent"`
+	AssignmentID          string     `json:"assignmentId,omitempty"`
+	AssignmentSort        int        `json:"assignmentSort"`
+	SpeedReadHTMLSegments []string   `json:"speedReadHtmlSegments,omitempty"`
 }
 
 type Question struct {
@@ -524,7 +556,9 @@ func (s *Store) attachImagePaths(ctx context.Context, ex *Exercise) error {
 
 func (s *Store) SetExerciseParsed(ctx context.Context, id, title, passage string) error {
 	res, err := s.db.ExecContext(ctx, `
-		UPDATE exercises SET title = ?, passage = ?, status = 'parsed' WHERE id = ?`, title, passage, id)
+		UPDATE exercises SET title = ?, passage = ?, status = 'parsed',
+			speed_read_segments_json = '', speed_read_segments_passage = ''
+		WHERE id = ?`, title, passage, id)
 	if err != nil {
 		return err
 	}
@@ -565,12 +599,14 @@ func (s *Store) GetExercise(ctx context.Context, id string) (*Exercise, []Questi
 	var ex Exercise
 	var created, completed sql.NullString
 	var assignID sql.NullString
+	var speedJSON, speedPassage sql.NullString
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, title, passage, image_path, status, created_at, completed_at, answers_json, score_percent,
-		       assignment_id, assignment_sort
+		       assignment_id, assignment_sort,
+		       ifnull(speed_read_segments_json, ''), ifnull(speed_read_segments_passage, '')
 		FROM exercises WHERE id = ?`, id).Scan(
 		&ex.ID, &ex.Title, &ex.Passage, &ex.ImagePath, &ex.Status, &created, &completed, &ex.AnswersJSON, &ex.ScorePercent,
-		&assignID, &ex.AssignmentSort)
+		&assignID, &ex.AssignmentSort, &speedJSON, &speedPassage)
 	if assignID.Valid {
 		ex.AssignmentID = assignID.String
 	}
@@ -608,7 +644,32 @@ func (s *Store) GetExercise(ctx context.Context, id string) (*Exercise, []Questi
 	if err := s.attachImagePaths(ctx, &ex); err != nil {
 		return nil, nil, err
 	}
+	if speedPassage.Valid && speedPassage.String == ex.Passage && speedJSON.Valid && strings.TrimSpace(speedJSON.String) != "" {
+		var segs []string
+		if err := json.Unmarshal([]byte(speedJSON.String), &segs); err == nil && len(segs) > 0 {
+			ex.SpeedReadHTMLSegments = segs
+		}
+	}
 	return &ex, list, nil
+}
+
+// SaveSpeedReadSegments persists bunsetsu HTML segments for the current passage (must match exercises.passage).
+func (s *Store) SaveSpeedReadSegments(ctx context.Context, exerciseID, passage string, htmlSegments []string) error {
+	b, err := json.Marshal(htmlSegments)
+	if err != nil {
+		return err
+	}
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE exercises SET speed_read_segments_json = ?, speed_read_segments_passage = ?
+		WHERE id = ?`, string(b), passage, exerciseID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (s *Store) SaveAnswersAndComplete(ctx context.Context, exerciseID string, answers map[string]string, scorePercent int) error {

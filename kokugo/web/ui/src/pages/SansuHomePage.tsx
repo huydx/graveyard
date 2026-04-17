@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { summarizeSansuKotsu } from "../api/client";
-import CameraModal from "../components/CameraModal";
 import RubyHtml from "../components/RubyHtml";
 import SansuKotsuVisualSection from "../components/SansuKotsuVisualSection";
 import { paths } from "../lib/paths";
@@ -19,8 +18,6 @@ export default function SansuHomePage() {
   const [err, setErr] = useState("");
   const [uploadStatus, setUploadStatus] = useState("");
   const [kotsuPages, setKotsuPages] = useState<SansuKotsuSummary[] | null>(null);
-  const [cameraModalOpen, setCameraModalOpen] = useState(false);
-
   const [previewUrl, setPreviewUrl] = useState("");
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
@@ -51,7 +48,10 @@ export default function SansuHomePage() {
     onPickFile(list[0]);
   };
 
-  const onRemoveImage = () => onPickFile(null);
+  const onRemoveImage = () => {
+    if (!window.confirm(L.confirmDeleteScanPage)) return;
+    onPickFile(null);
+  };
 
   const onAnalyze = async () => {
     if (!file) return;
@@ -72,6 +72,9 @@ export default function SansuHomePage() {
       <RubyHtml as="h2" className="sansu-placeholder-title" html={L.sansuPageTitle} />
       <p className="sansu-placeholder-lead">
         <RubyHtml html={L.sansuPageLead} />
+      </p>
+      <p className="sansu-main-banner muted">
+        <RubyHtml html={L.sansuSidebarHint} />
       </p>
       <div className="card sansu-kotsu-card">
         <h2>
@@ -95,14 +98,7 @@ export default function SansuHomePage() {
             className="btn btn-primary btn-xl btn-block"
             onClick={() => cameraInputRef.current?.click()}
           >
-            <RubyHtml html={L.btnCameraTake} />
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary btn-xl btn-block"
-            onClick={() => setCameraModalOpen(true)}
-          >
-            <RubyHtml html={L.btnScreenShutter} />
+            <RubyHtml html={L.btnPhotoTakeKid} />
           </button>
           <input
             ref={galleryInputRef}
@@ -116,7 +112,7 @@ export default function SansuHomePage() {
             className="btn btn-secondary btn-xl btn-block"
             onClick={() => galleryInputRef.current?.click()}
           >
-            <RubyHtml html={L.btnAlbumPick} />
+            <RubyHtml html={L.btnAlbumPickKid} />
           </button>
         </div>
         <p className="status">
@@ -185,13 +181,6 @@ export default function SansuHomePage() {
       <Link to={paths.home} className="btn btn-ghost sansu-back">
         <RubyHtml html={L.backToAppHub} />
       </Link>
-      <CameraModal
-        open={cameraModalOpen}
-        onClose={() => setCameraModalOpen(false)}
-        onCapture={(captured) => {
-          onPickFile(captured);
-        }}
-      />
     </div>
   );
 }

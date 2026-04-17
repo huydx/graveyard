@@ -51,3 +51,26 @@ export function exerciseTitleFallbackHtml(a: AssignmentGroup): string {
   if (isBareEmptyDraft(first)) return exerciseRowFallbackNoScan;
   return exerciseRowTitleHtml(first);
 }
+
+/** Kid-facing list title: date + subject + そのn (serial is 1-based among sorted list). */
+export function kidFriendlyPrintTitle(createdAt: string, subject: "kokugo" | "sansu", serial: number): string {
+  try {
+    const d = new Date(createdAt);
+    if (!Number.isNaN(d.getTime())) {
+      const subj = subject === "kokugo" ? "こくご" : "さんすう";
+      return `${d.getMonth() + 1}/${d.getDate()} ${subj} れんしゅう その${serial}`;
+    }
+  } catch {
+    /* ignore */
+  }
+  const subj = subject === "kokugo" ? "こくご" : "さんすう";
+  return `${subj} れんしゅう その${serial}`;
+}
+
+export function sortAssignmentsNewestFirst<T extends { createdAt: string }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => {
+    const ta = new Date(a.createdAt).getTime();
+    const tb = new Date(b.createdAt).getTime();
+    return (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta);
+  });
+}

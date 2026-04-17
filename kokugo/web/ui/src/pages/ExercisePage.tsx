@@ -3,9 +3,9 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   checkQuestionAnswer,
   explainPassageSelection,
+  generateSpeedReadSegments,
   getExercise,
   getQuestionSolution,
-  getSpeedReadSegments,
   submitAnswers,
   transcribeAudio,
 } from "../api/client";
@@ -17,7 +17,6 @@ import { useMediaRecorderAnswer } from "../hooks/useMediaRecorderAnswer";
 import { useWebHighlighterExplain } from "../hooks/useWebHighlighterExplain";
 import ScanImageModal from "../components/ScanImageModal";
 import RubyHtml, { PassageRuby } from "../components/RubyHtml";
-import { sanitizeRubyHtml } from "../lib/ruby";
 import { paths } from "../lib/paths";
 import * as L from "../lib/uiLabelsRuby";
 import type { AssignmentExerciseRef, Question, QuestionCheckResult } from "../types";
@@ -28,55 +27,6 @@ const SPEED_READING_MIN_WPM = 80;
 const SPEED_READING_MAX_WPM = 420;
 const SPEED_READING_DEFAULT_WPM = 180;
 const EXPLAIN_SELECTION_MAX_RUNES = 400;
-
-function segmentPassageWords(text: string): string[] {
-  const cleaned = text.replace(/\s+/g, " ").trim();
-  if (!cleaned) return [];
-  if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
-    const segmenter = new Intl.Segmenter("ja", { granularity: "word" });
-    const words = Array.from(segmenter.segment(cleaned))
-      .map((part) => part.segment.trim())
-      .filter(Boolean);
-    if (words.length > 0) return words;
-  }
-  return Array.from(cleaned);
-}
-
-function segmentTextPreservingWords(text: string): string[] {
-  const cleaned = text.replace(/\s+/g, " ").trim();
-  if (!cleaned) return [];
-  if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
-    const segmenter = new Intl.Segmenter("ja", { granularity: "word" });
-    return Array.from(segmenter.segment(cleaned))
-      .map((part) => part.segment)
-      .filter((part) => part.trim().length > 0);
-  }
-  return Array.from(cleaned);
-}
-
-function passageToSpeedReadWordHtmls(html: string): string[] {
-  if (typeof document === "undefined") return segmentPassageWords(html);
-  const clean = sanitizeRubyHtml(html);
-  const root = document.createElement("div");
-  root.innerHTML = clean;
-  const tokens: string[] = [];
-  const walk = (node: Node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      tokens.push(...segmentTextPreservingWords(node.textContent ?? ""));
-      return;
-    }
-    if (node.nodeType !== Node.ELEMENT_NODE) return;
-    const el = node as HTMLElement;
-    if (el.tagName === "RUBY") {
-      tokens.push(el.outerHTML);
-      return;
-    }
-    if (el.tagName === "RT" || el.tagName === "RP" || el.tagName === "BR") return;
-    Array.from(el.childNodes).forEach(walk);
-  };
-  Array.from(root.childNodes).forEach(walk);
-  return tokens.filter((t) => t.trim().length > 0);
-}
 
 export default function ExercisePage() {
   const { id: rawId } = useParams<{ id: string }>();
@@ -110,10 +60,8 @@ export default function ExercisePage() {
   const [speedReadingWpm, setSpeedReadingWpm] = useState(SPEED_READING_DEFAULT_WPM);
   const [speedReadingIdx, setSpeedReadingIdx] = useState(0);
   const [speedReadHtmlSegments, setSpeedReadHtmlSegments] = useState<string[] | null>(null);
-  const [speedReadSegmentsState, setSpeedReadSegmentsState] = useState<"idle" | "loading" | "ok" | "error">(
-    "idle"
-  );
-  const speedSegCacheRef = useRef<{ passage: string; segments: string[] } | null>(null);
+  const [speedReadGenBusy, setSpeedReadGenBusy] = useState(false);
+  const [speedReadGenErr, setSpeedReadGenErr] = useState("");
   const [explainMode, setExplainMode] = useState(false);
   const [explainSelection, setExplainSelection] = useState("");
   const [explainBusy, setExplainBusy] = useState(false);
@@ -163,6 +111,14 @@ export default function ExercisePage() {
         setExplainSelection("");
         setExplainErr("");
         setExplainResult(null);
+        const srs = d.exercise.speedReadHtmlSegments;
+        if (srs && srs.length > 0) {
+          setSpeedReadHtmlSegments(srs);
+        } else {
+          setSpeedReadHtmlSegments(null);
+        }
+        setSpeedReadGenErr("");
+        setSpeedReadGenBusy(false);
       })
       .catch((e) => setLoadErr(e instanceof Error ? e.message : "エラー"));
   }, [id]);
@@ -178,14 +134,35 @@ export default function ExercisePage() {
 
   const q = questions[qIdx];
   const speedReadingWords = useMemo(() => {
-    if (speedReadingMode && speedReadSegmentsState === "loading") {
+    if (!speedReadingMode || speedReadGenBusy) {
       return [];
     }
     if (speedReadHtmlSegments !== null && speedReadHtmlSegments.length > 0) {
       return speedReadHtmlSegments;
     }
-    return passageToSpeedReadWordHtmls(passage);
-  }, [speedReadingMode, speedReadSegmentsState, speedReadHtmlSegments, passage]);
+    return [];
+  }, [speedReadingMode, speedReadGenBusy, speedReadHtmlSegments]);
+
+  const runSpeedReadGen = useCallback(() => {
+    if (!id || !passage.trim()) return;
+    setSpeedReadGenBusy(true);
+    setSpeedReadGenErr("");
+    void generateSpeedReadSegments(id)
+      .then((res) => {
+        const segs = res.htmlSegments ?? [];
+        if (segs.length > 0) {
+          setSpeedReadHtmlSegments(segs);
+        } else {
+          setSpeedReadHtmlSegments(null);
+          setSpeedReadGenErr("本文がないか、文節に分けられませんでした。");
+        }
+      })
+      .catch((e) => {
+        setSpeedReadHtmlSegments(null);
+        setSpeedReadGenErr(e instanceof Error ? e.message : "エラー");
+      })
+      .finally(() => setSpeedReadGenBusy(false));
+  }, [id, passage]);
 
   useEffect(() => {
     setSpeedReadingPlaying(false);
@@ -194,54 +171,6 @@ export default function ExercisePage() {
     setExplainErr("");
     setExplainResult(null);
   }, [passage]);
-
-  useEffect(() => {
-    speedSegCacheRef.current = null;
-    setSpeedReadHtmlSegments(null);
-    setSpeedReadSegmentsState("idle");
-  }, [passage]);
-
-  useEffect(() => {
-    if (!speedReadingMode) {
-      setSpeedReadSegmentsState("idle");
-    }
-  }, [speedReadingMode]);
-
-  useEffect(() => {
-    if (!speedReadingMode || !id || !passage.trim()) {
-      return;
-    }
-    const hit = speedSegCacheRef.current;
-    if (hit?.passage === passage && hit.segments.length > 0) {
-      setSpeedReadHtmlSegments(hit.segments);
-      setSpeedReadSegmentsState("ok");
-      return;
-    }
-    let cancelled = false;
-    setSpeedReadSegmentsState("loading");
-    getSpeedReadSegments(id)
-      .then((res) => {
-        if (cancelled) return;
-        const segs = res.htmlSegments ?? [];
-        if (segs.length > 0) {
-          speedSegCacheRef.current = { passage, segments: segs };
-          setSpeedReadHtmlSegments(segs);
-          setSpeedReadSegmentsState("ok");
-        } else {
-          setSpeedReadHtmlSegments(null);
-          setSpeedReadSegmentsState("ok");
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setSpeedReadHtmlSegments(null);
-          setSpeedReadSegmentsState("error");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [speedReadingMode, id, passage]);
 
   const onExplainHlText = useCallback((text: string) => {
     setExplainSelection(text);
@@ -462,7 +391,7 @@ export default function ExercisePage() {
   }
 
   return (
-    <section className="view">
+    <section className="view view--wide">
       {printAssignmentId ? (
         <nav className="print-breadcrumb muted">
           <Link to={paths.kokugo.print(printAssignmentId)}>
@@ -613,21 +542,29 @@ export default function ExercisePage() {
                 </label>
               </div>
               <div className="speed-reading-track" aria-live="polite">
-                {speedReadSegmentsState === "loading" ? (
+                {speedReadGenBusy ? (
                   <span className="muted">
                     <RubyHtml html={L.speedReadBunsetsuLoading} />
                   </span>
+                ) : speedReadHtmlSegments && speedReadHtmlSegments.length > 0 ? (
+                  <span className="muted">
+                    {speedReadingIdx + 1}/{speedReadingWords.length}
+                  </span>
                 ) : (
-                  <>
-                    <span className="muted">
-                      {speedReadingWords.length > 0 ? `${speedReadingIdx + 1}/${speedReadingWords.length}` : "—"}
-                    </span>
-                    {speedReadSegmentsState === "error" && (
-                      <div className="speed-reading-fallback-hint muted">
-                        <RubyHtml html={L.speedReadBunsetsuFallback} />
-                      </div>
-                    )}
-                  </>
+                  <div className="speed-reading-bunsetsu-setup">
+                    <p className="muted speed-reading-bunsetsu-hint">
+                      <RubyHtml html={L.speedReadBunsetsuHint} />
+                    </p>
+                    {speedReadGenErr ? <p className="speed-reading-gen-error">{speedReadGenErr}</p> : null}
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => void runSpeedReadGen()}
+                      disabled={!passage.trim()}
+                    >
+                      <RubyHtml html={speedReadGenErr ? L.speedReadBunsetsuRetry : L.speedReadBunsetsuGenerate} />
+                    </button>
+                  </div>
                 )}
               </div>
             </div>

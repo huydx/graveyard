@@ -20,5 +20,7 @@ export const paths = {
     result: (id: string) => `${KOKUGO_BASE}/result/${encodeURIComponent(id)}`,
     remind: `${KOKUGO_BASE}/remind`,
     settings: `${KOKUGO_BASE}/settings`,
+    progress: `${KOKUGO_BASE}/progress`,
+    digests: `${KOKUGO_BASE}/digests`,
   },
 } as const;

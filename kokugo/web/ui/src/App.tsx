@@ -9,6 +9,8 @@ import NewPrintPage from "./pages/NewPrintPage";
 import PrintDetailPage from "./pages/PrintDetailPage";
 import RemindPage from "./pages/RemindPage";
 import SettingsPage from "./pages/SettingsPage";
+import ProgressPage from "./pages/ProgressPage";
+import DigestsPage from "./pages/DigestsPage";
 import SansuNewPrintPage from "./pages/SansuNewPrintPage";
 import SansuPrintsPage from "./pages/SansuPrintsPage";
 import SansuScanPage from "./pages/SansuScanPage";
@@ -34,6 +36,8 @@ export default function App() {
           <Route path="result/:id" element={<ResultPage />} />
           <Route path="remind" element={<RemindPage />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="progress" element={<ProgressPage />} />
+          <Route path="digests" element={<DigestsPage />} />
         </Route>
         <Route path="sansu">
           <Route index element={<Navigate to="prints" replace />} />

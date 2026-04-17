@@ -10,6 +10,11 @@ import (
 	"unicode/utf8"
 )
 
+type WeeklyDigest struct {
+	SubTopic string `json:"sub_topic"`
+	Content  string `json:"content"`
+}
+
 // TranscribeAnswerAudio runs speech-to-text via ChatCompletion (multimodal user message).
 func TranscribeAnswerAudio(ctx context.Context, c ChatCompleter, model string, audio []byte, mime string) (string, error) {
 	if c == nil {
@@ -516,4 +521,56 @@ func SegmentPassageBunsetsu(ctx context.Context, c ChatCompleter, model, visible
 		return nil, fmt.Errorf("bunsetsu JSON: segments が空です")
 	}
 	return out, nil
+}
+
+func GenerateWeeklyDigest(ctx context.Context, c ChatCompleter, model, topic string, existingSubTopics []string) (*WeeklyDigest, error) {
+	if c == nil {
+		return nil, fmt.Errorf("chat: nil completer")
+	}
+	topic = strings.TrimSpace(topic)
+	if topic == "" {
+		return nil, fmt.Errorf("topic is required")
+	}
+	prev := "なし"
+	if len(existingSubTopics) > 0 {
+		prev = strings.Join(existingSubTopics, ", ")
+	}
+	user := fmt.Sprintf(WeeklyDigestUserTemplate, topic, prev)
+	req := ChatCompletionRequest{
+		Model:       model,
+		Temperature: 0.5,
+		MaxTokens:   4096,
+		Messages: []ChatMessage{
+			TextMessage("system", WeeklyDigestSystemJP),
+			TextMessage("user", user),
+		},
+		ResponseFormat: &ChatResponseFormat{Type: "json_object"},
+	}
+	resp, err := c.CreateChatCompletion(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	text, err := FirstAssistantContent(resp)
+	if err != nil {
+		return nil, err
+	}
+	text = StripMarkdownFence(text)
+	jsonObj, err := ExtractFirstJSONObject(text)
+	if err != nil {
+		return nil, fmt.Errorf("weekly digest JSON: %w", err)
+	}
+	var out WeeklyDigest
+	if err := json.Unmarshal([]byte(jsonObj), &out); err != nil {
+		return nil, fmt.Errorf("weekly digest JSON: %w", err)
+	}
+	out.SubTopic = strings.TrimSpace(out.SubTopic)
+	out.Content = strings.TrimSpace(out.Content)
+	n := utf8.RuneCountInString(out.Content)
+	if out.SubTopic == "" || out.Content == "" {
+		return nil, fmt.Errorf("weekly digest JSON: required fields are empty")
+	}
+	if n < 500 || n > 1000 {
+		return nil, fmt.Errorf("weekly digest length out of range: %d", n)
+	}
+	return &out, nil
 }

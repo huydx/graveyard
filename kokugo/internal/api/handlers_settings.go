@@ -51,6 +51,7 @@ func (s *Server) GetSettings(w http.ResponseWriter, r *http.Request) {
 
 		"hasGeminiKey":       strings.TrimSpace(db.GoogleAPIKey) != "",
 		"geminiKeyEffective": strings.TrimSpace(effGoogleKey) != "",
+		"digestTopic":        strings.TrimSpace(db.DigestTopic),
 
 		"summaryChatBackendEffective": effSum,
 		"judgeChatBackendEffective":   effJudge,
@@ -89,6 +90,7 @@ type putSettingsBody struct {
 
 	GoogleAPIKey      *string `json:"googleApiKey"`
 	ClearGoogleAPIKey *bool   `json:"clearGoogleApiKey"`
+	DigestTopic       *string `json:"digestTopic"`
 }
 
 func validateChatBackendField(v string) (string, bool) {
@@ -167,6 +169,9 @@ func (s *Server) PutSettings(w http.ResponseWriter, r *http.Request) {
 	patch.ClearGoogleKey = clearKey
 	if !clearKey && body.GoogleAPIKey != nil {
 		patch.GoogleAPIKey = body.GoogleAPIKey
+	}
+	if body.DigestTopic != nil {
+		patch.DigestTopic = body.DigestTopic
 	}
 
 	if err := s.Store.PatchAppSettings(r.Context(), patch); err != nil {

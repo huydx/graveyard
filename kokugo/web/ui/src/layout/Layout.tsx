@@ -9,8 +9,8 @@ const LS_SIDEBAR = "study-app-sidebar-expanded";
 
 export default function Layout() {
   const location = useLocation();
-  const [badge, setBadge] = useState(L.badgeAiWaiting);
   const [geminiOk, setGeminiOk] = useState(false);
+  const [apiReachable, setApiReachable] = useState(true);
   const [childName, setChildName] = useState("");
   const [sidebarExpanded, setSidebarExpanded] = useState(() => {
     if (typeof window === "undefined") return true;
@@ -19,6 +19,7 @@ export default function Layout() {
 
   const inKokugo = location.pathname.startsWith("/kokugo");
   const inSansu = location.pathname.startsWith("/sansu");
+  const showSettingsBadge = location.pathname === paths.kokugo.settings;
 
   useEffect(() => {
     try {
@@ -31,17 +32,12 @@ export default function Layout() {
   useEffect(() => {
     getHealth()
       .then((h) => {
-        if (h.geminiConnected) {
-          setBadge(L.badgeAiOk);
-          setGeminiOk(true);
-        } else {
-          setBadge(L.badgeAiKey);
-          setGeminiOk(false);
-        }
+        setApiReachable(true);
+        setGeminiOk(!!h.geminiConnected);
         setChildName(h.childName?.trim() ? h.childName : "");
       })
       .catch(() => {
-        setBadge(L.badgeApiDown);
+        setApiReachable(false);
         setGeminiOk(false);
       });
   }, [location.pathname]);
@@ -75,7 +71,7 @@ export default function Layout() {
                 <RubyHtml html={L.sansuPageTitle} />
               </div>
             ) : null}
-            <div className="profile">
+            <Link to={paths.kokugo.progress} className="profile profile--link">
               <div className="avatar" aria-hidden="true">
                 🐦
               </div>
@@ -85,7 +81,7 @@ export default function Layout() {
                   <RubyHtml html={L.profileCheer} />
                 </small>
               </div>
-            </div>
+            </Link>
             <Link to={paths.home} className="sidebar-hub-link">
               <RubyHtml html={L.navAppHub} />
             </Link>
@@ -98,22 +94,31 @@ export default function Layout() {
                   >
                     <RubyHtml html={L.navPrint} />
                   </NavLink>
+                  <NavLink
+                    to={paths.kokugo.digests}
+                    className={({ isActive }) => "nav-btn nav-btn-main" + (isActive ? " active" : "")}
+                  >
+                    <RubyHtml html={L.navWeeklyDigest} />
+                  </NavLink>
                 </nav>
                 <div className="sidebar-secondary">
                   <Link to={paths.kokugo.remind} className="sidebar-secondary-link">
                     <RubyHtml html={L.navMonthlyReview} />
                   </Link>
-                  <Link to={paths.kokugo.settings} className="sidebar-secondary-link">
-                    <RubyHtml html={L.navSettings} />
+                  <Link to={paths.kokugo.settings} className="sidebar-secondary-link sidebar-secondary-link--parent">
+                    <RubyHtml html={L.navParentOnly} />
                   </Link>
                 </div>
               </>
             ) : null}
             {inSansu ? (
               <div className="sidebar-secondary sidebar-secondary--sansu">
-                <p className="sidebar-sansu-hint">
-                  <RubyHtml html={L.sansuSidebarHint} />
-                </p>
+                <Link to={paths.kokugo.remind} className="sidebar-secondary-link">
+                  <RubyHtml html={L.navMonthlyReview} />
+                </Link>
+                <Link to={paths.kokugo.settings} className="sidebar-secondary-link sidebar-secondary-link--parent">
+                  <RubyHtml html={L.navParentOnly} />
+                </Link>
               </div>
             ) : null}
           </>
@@ -131,9 +136,23 @@ export default function Layout() {
       </aside>
       <main className="main">
         <header className="topbar">
-          <span className={"badge" + (geminiOk ? " ok" : "")}>
-            <RubyHtml html={badge} />
-          </span>
+          <div className="topbar-badge-slot">
+            {showSettingsBadge ? (
+              <span
+                className={"badge" + (!apiReachable ? " bad" : geminiOk ? " ok" : " warn")}
+              >
+                <RubyHtml
+                  html={
+                    !apiReachable
+                      ? L.badgeApiDownParent
+                      : geminiOk
+                        ? L.badgeAiOk
+                        : L.badgeParentGeminiHint
+                  }
+                />
+              </span>
+            ) : null}
+          </div>
           <RubyHtml as="h1" html={L.titleHtmlForPath(location.pathname)} />
         </header>
         <Outlet context={{ childName }} />

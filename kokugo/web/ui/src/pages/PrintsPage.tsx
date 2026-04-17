@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listHistory } from "../api/client";
 import RubyHtml from "../components/RubyHtml";
-import { customPrintTitle, exerciseTitleFallbackHtml, isOnlyBareEmptyPrint } from "../lib/printTitle";
+import { isOnlyBareEmptyPrint, kidFriendlyPrintTitle, sortAssignmentsNewestFirst } from "../lib/printTitle";
 import { paths } from "../lib/paths";
 import * as L from "../lib/uiLabelsRuby";
 import type { AssignmentGroup } from "../types";
@@ -42,6 +42,8 @@ export default function PrintsPage() {
     void load();
   }, [load]);
 
+  const sorted = sortAssignmentsNewestFirst(assignments);
+
   return (
     <section className="view">
       <div className="card prints-hero">
@@ -68,18 +70,22 @@ export default function PrintsPage() {
             <RubyHtml html={L.printsEmpty} />
           </p>
         ) : null}
-        <ul className="print-index-list">
-          {assignments.map((a) => {
-            const custom = customPrintTitle(a);
+        <ul className="print-card-list">
+          {sorted.map((a, i) => {
+            const serial = i + 1;
+            const title = kidFriendlyPrintTitle(a.createdAt, "kokugo", serial);
             return (
               <li key={a.id}>
-                <Link to={paths.kokugo.print(a.id)} className="print-index-row">
-                  <span className="print-index-title">
-                    {custom ? custom : <RubyHtml html={exerciseTitleFallbackHtml(a)} />}
+                <Link to={paths.kokugo.print(a.id)} className="print-card-link">
+                  <span className="print-card-icon" aria-hidden>
+                    📚
                   </span>
-                  <span className="muted print-index-meta">
-                    {formatWhen(a.createdAt)} · <RubyHtml html={printStatusLineHtml(a)} />
-                  </span>
+                  <div className="print-card-body">
+                    <span className="print-card-title">{title}</span>
+                    <span className="muted print-card-meta">
+                      {formatWhen(a.createdAt)} · <RubyHtml html={printStatusLineHtml(a)} />
+                    </span>
+                  </div>
                 </Link>
               </li>
             );

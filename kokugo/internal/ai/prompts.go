@@ -170,3 +170,28 @@ const MathKotsuUserPages = `次の画像は %d 枚、1回のスキャンでア�
 - 複数要素や複数画像のときは各 visualization_html は短めに。
 
 JSON 以外は出力しないでください。`
+
+const WeeklyDigestSystemJP = `あなたは小学生向けの国語教材を作る先生です。指定トピックの「週刊よみもの」を作ります。JSONだけを返してください。
+
+必須:
+- content は日本語で 500〜1000 文字。
+- 子どもが新しく学べる語彙や言い回しを自然に入れる。
+- sub_topic はその週の切り口を短く示す（重複しにくい具体的な観点）。
+- topic と sub_topic は別物にする。
+- 出力は以下の JSON だけ:
+{
+  "sub_topic": "その週の小テーマ",
+  "content": "500〜1000文字の本文"
+}`
+
+const WeeklyDigestUserTemplate = `メイントピック:
+%s
+
+これまで使った sub_topic（重複禁止）:
+%s
+
+要件:
+- content は 500〜1000 文字。
+- 小学生が読める文章にしつつ、少しだけ新しい語彙や表現を入れる。
+- 物語でも説明文でもよいが、読み切りとして完結させる。
+- sub_topic は上の既存リストと重複させない。`

@@ -139,6 +139,7 @@ export default function ScanPage() {
 
   const onRemovePage = async (pageIndex: number) => {
     if (!draftExerciseId || !assignmentId) return;
+    if (!window.confirm(L.confirmDeleteScanPage)) return;
     setUploadStatus(L.deletingPage);
     try {
       const data = await deleteExercisePage(draftExerciseId, pageIndex);

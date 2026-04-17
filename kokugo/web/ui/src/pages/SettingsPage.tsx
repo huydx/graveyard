@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { getAppSettings, getHealth, getOllamaCheck, putAppSettings } from "../api/client";
+import ParentSettingsGate from "../components/ParentSettingsGate";
 import RubyHtml from "../components/RubyHtml";
 import * as L from "../lib/uiLabelsRuby";
 
@@ -144,8 +145,9 @@ export default function SettingsPage() {
     void refreshOllamaModels(ollamaBaseUrl.trim() || undefined, { userInitiated: true });
 
   return (
-    <section className="view">
-      <div className="card settings-card">
+    <ParentSettingsGate>
+      <section className="view">
+        <div className="card settings-card">
         <h2>
           <RubyHtml html={L.settingsHead} />
         </h2>
@@ -303,7 +305,8 @@ export default function SettingsPage() {
             </span>
           ) : null}
         </div>
-      </div>
-    </section>
+        </div>
+      </section>
+    </ParentSettingsGate>
   );
 }

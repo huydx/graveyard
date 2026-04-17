@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { deleteExercise, generatePrintSummary, getPrint, getPrintSummary, patchPrintTitle } from "../api/client";
 import RubyHtml from "../components/RubyHtml";
@@ -9,6 +9,7 @@ import {
   exerciseTitleFallbackHtml,
   isOnlyBareEmptyPrint,
 } from "../lib/printTitle";
+import { splitOverviewToPlainBullets } from "../lib/overviewBullets";
 import { paths } from "../lib/paths";
 import * as L from "../lib/uiLabelsRuby";
 import type { AssignmentGroup, Exercise, PrintLearningSummary } from "../types";
@@ -84,6 +85,11 @@ export default function PrintDetailPage() {
     setTitleErr("");
   }, [print?.id, print?.title]);
 
+  const overviewBullets = useMemo(
+    () => (printSummary?.overview ? splitOverviewToPlainBullets(printSummary.overview) : []),
+    [printSummary?.overview],
+  );
+
   const saveTitle = async () => {
     if (!assignmentId || !print) return;
     const next = titleEdit.trim();
@@ -125,7 +131,7 @@ export default function PrintDetailPage() {
   };
 
   const removeOne = async (ex: Exercise) => {
-    if (!window.confirm("このだいを削除しますか？（もとに戻せません）")) return;
+    if (!window.confirm(L.confirmDeleteSection)) return;
     setDeletingId(ex.id);
     try {
       await deleteExercise(ex.id);
@@ -141,7 +147,7 @@ export default function PrintDetailPage() {
     if (!print) return;
     const p = primaryOf(print);
     if (!p) return;
-    if (!window.confirm("このプリントぜんたいを削除しますか？（もとに戻せません）")) return;
+    if (!window.confirm(L.confirmDeletePrint)) return;
     setDeletingId(p.id);
     try {
       await deleteExercise(p.id);
@@ -207,7 +213,13 @@ export default function PrintDetailPage() {
 
   return (
     <section className="view print-detail">
-      <nav className="print-breadcrumb muted">
+      <nav className="print-breadcrumb muted print-breadcrumb--multi">
+        <Link to={paths.home}>
+          <RubyHtml html={L.backHomeKid} />
+        </Link>
+        <span className="breadcrumb-sep" aria-hidden>
+          ·
+        </span>
         <Link to={paths.kokugo.prints}>
           <RubyHtml html={L.backPrintList} />
         </Link>
@@ -273,14 +285,21 @@ export default function PrintDetailPage() {
               <RubyHtml html={L.practiceThisPrint} />
             </button>
           ) : null}
-          <button
-            type="button"
-            className="btn btn-ghost"
-            disabled={deletingId !== null || !primary}
-            onClick={() => void removeWhole()}
-          >
-            <RubyHtml html={L.deleteThisPrint} />
-          </button>
+          <details className="print-danger-menu">
+            <summary className="print-danger-summary" aria-label="ほかの操作（けすなど）">
+              ⋯
+            </summary>
+            <div className="print-danger-panel">
+              <button
+                type="button"
+                className="btn btn-danger-soft"
+                disabled={deletingId !== null || !primary}
+                onClick={() => void removeWhole()}
+              >
+                <RubyHtml html={L.deleteThisPrint} />
+              </button>
+            </div>
+          </details>
         </div>
       </div>
 
@@ -306,14 +325,27 @@ export default function PrintDetailPage() {
           {printSummary ? (
             <div className="print-summary-block">
               {printSummary.overview ? (
-                <p className="print-summary-overview">
-                  <RubyHtml html={printSummary.overview} />
-                </p>
+                overviewBullets.length >= 2 ? (
+                  <>
+                    <h4 className="print-summary-subhead">
+                      <RubyHtml html={L.printSummaryTodayHead} />
+                    </h4>
+                    <ul className="print-summary-overview-bullets">
+                      {overviewBullets.map((line, bi) => (
+                        <li key={bi}>{line}</li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <p className="print-summary-overview">
+                    <RubyHtml html={printSummary.overview} />
+                  </p>
+                )
               ) : null}
               {printSummary.keyword_cards?.length ? (
                 <>
                   <h4 className="print-summary-kw-head">
-                    <RubyHtml html={L.wordsPoints} />
+                    <RubyHtml html={L.printSummaryWordsHead} />
                   </h4>
                   <ul className="print-summary-kw-list">
                     {printSummary.keyword_cards.map((row, i) => (
@@ -373,15 +405,24 @@ export default function PrintDetailPage() {
                   <RubyHtml html={exerciseRowTitleHtml(ex)} /> — <RubyHtml html={exerciseStatusJa(ex.status)} />
                   {typeof ex.scorePercent === "number" ? ` — ${ex.scorePercent}%` : ""}
                 </button>
-                <button
-                  type="button"
-                  className="history-row-delete"
-                  aria-label={L.ariaDeleteSection}
-                  disabled={deletingId !== null}
-                  onClick={() => void removeOne(ex)}
-                >
-                  {deletingId === ex.id ? "…" : <RubyHtml html={L.deleteKanji} />}
-                </button>
+                <details className="history-row-danger">
+                  <summary className="history-row-danger-summary" aria-label={L.ariaDeleteSection}>
+                    ⋯
+                  </summary>
+                  <div className="history-row-danger-panel">
+                    <button
+                      type="button"
+                      className="btn btn-danger-soft btn-sm"
+                      disabled={deletingId !== null}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        void removeOne(ex);
+                      }}
+                    >
+                      {deletingId === ex.id ? "…" : <RubyHtml html={L.deleteKanji} />}
+                    </button>
+                  </div>
+                </details>
               </li>
             ))}
           </ul>

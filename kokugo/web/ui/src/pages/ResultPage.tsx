@@ -64,7 +64,7 @@ export default function ResultPage() {
   })();
 
   return (
-    <section className="view">
+    <section className="view view--wide">
       {printAssignmentId ? (
         <nav className="print-breadcrumb muted">
           <Link to={paths.kokugo.print(printAssignmentId)}>

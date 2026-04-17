@@ -8,7 +8,6 @@ import {
   getSansuExerciseKotsu,
   summarizeSansuExerciseKotsu,
 } from "../api/client";
-import CameraModal from "../components/CameraModal";
 import RubyHtml from "../components/RubyHtml";
 import SansuKotsuVisualSection from "../components/SansuKotsuVisualSection";
 import ScanImageModal from "../components/ScanImageModal";
@@ -31,7 +30,6 @@ export default function SansuScanPage() {
   const [parseStatus, setParseStatus] = useState("");
   const [thumbRev, setThumbRev] = useState(0);
   const [pageCount, setPageCount] = useState(0);
-  const [cameraModalOpen, setCameraModalOpen] = useState(false);
   const [scanModalIndex, setScanModalIndex] = useState<number | null>(null);
   const [kotsuPages, setKotsuPages] = useState<SansuKotsuSummary[] | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -103,6 +101,7 @@ export default function SansuScanPage() {
   const onRemovePage = async (pageIndex: number) => {
     const eid = draftRef.current;
     if (!eid) return;
+    if (!window.confirm(L.confirmDeleteScanPage)) return;
     try {
       setUploadStatus(L.deletingPage);
       const data = await deleteExercisePage(eid, pageIndex);
@@ -174,10 +173,7 @@ export default function SansuScanPage() {
               onChange={onFileFromInput}
             />
             <button type="button" className="btn btn-primary btn-xl btn-block" onClick={() => cameraInputRef.current?.click()}>
-              <RubyHtml html={L.btnCameraTake} />
-            </button>
-            <button type="button" className="btn btn-secondary btn-xl btn-block" onClick={() => setCameraModalOpen(true)}>
-              <RubyHtml html={L.btnScreenShutter} />
+              <RubyHtml html={L.btnPhotoTakeKid} />
             </button>
             <input
               ref={galleryInputRef}
@@ -188,7 +184,7 @@ export default function SansuScanPage() {
               onChange={onFileFromInput}
             />
             <button type="button" className="btn btn-secondary btn-xl btn-block" onClick={() => galleryInputRef.current?.click()}>
-              <RubyHtml html={L.btnAlbumPick} />
+              <RubyHtml html={L.btnAlbumPickKid} />
             </button>
           </div>
           <p className="status">
@@ -265,7 +261,6 @@ export default function SansuScanPage() {
             ))
           : null}
       </section>
-      <CameraModal open={cameraModalOpen} onClose={() => setCameraModalOpen(false)} onCapture={(f) => void uploadFiles([f])} />
       {scanModalIndex !== null && draftExerciseId && pageCount > 0 ? (
         <ScanImageModal
           exerciseId={draftExerciseId}

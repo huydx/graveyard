@@ -19,6 +19,7 @@ type AppSettings struct {
 	SummaryChatBackend string
 	JudgeChatBackend   string
 	RubyBackend        string
+	DigestTopic        string
 	UpdatedAt          time.Time
 }
 
@@ -27,10 +28,10 @@ func (s *Store) GetAppSettings(ctx context.Context) (AppSettings, error) {
 	var updated sql.NullString
 	err := s.db.QueryRowContext(ctx, `
 		SELECT ollama_base_url, ollama_model, ollama_chat_model, parse_strategy, ocr_server_url, google_api_key, chat_backend,
-			summary_chat_backend, judge_chat_backend, ruby_backend, updated_at
+			summary_chat_backend, judge_chat_backend, ruby_backend, ifnull(digest_topic, ''), updated_at
 		FROM app_settings WHERE id = 1`).Scan(
 		&out.OllamaBaseURL, &out.OllamaModel, &out.OllamaChatModel, &out.ParseStrategy, &out.OcrServerURL, &out.GoogleAPIKey, &out.ChatBackend,
-		&out.SummaryChatBackend, &out.JudgeChatBackend, &out.RubyBackend, &updated)
+		&out.SummaryChatBackend, &out.JudgeChatBackend, &out.RubyBackend, &out.DigestTopic, &updated)
 	if err != nil {
 		return out, err
 	}
@@ -58,6 +59,7 @@ type AppSettingsPatch struct {
 	JudgeChatBackend   *string
 	ChatBackend        *string // legacy: if set alone, API fans out to summary + judge
 	GoogleAPIKey       *string
+	DigestTopic        *string
 	ClearGoogleKey     bool
 }
 
@@ -87,15 +89,18 @@ func (s *Store) PatchAppSettings(ctx context.Context, patch AppSettingsPatch) er
 	} else if patch.GoogleAPIKey != nil {
 		cur.GoogleAPIKey = strings.TrimSpace(*patch.GoogleAPIKey)
 	}
+	if patch.DigestTopic != nil {
+		cur.DigestTopic = strings.TrimSpace(*patch.DigestTopic)
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err = s.db.ExecContext(ctx, `
 		UPDATE app_settings SET
 			ollama_base_url = ?, ollama_model = ?, ollama_chat_model = ?, parse_strategy = ?, ocr_server_url = ?, google_api_key = ?,
-			chat_backend = ?, summary_chat_backend = ?, judge_chat_backend = ?, ruby_backend = ?,
+			chat_backend = ?, summary_chat_backend = ?, judge_chat_backend = ?, ruby_backend = ?, digest_topic = ?,
 			updated_at = ?
 		WHERE id = 1`,
 		cur.OllamaBaseURL, cur.OllamaModel, cur.OllamaChatModel, cur.ParseStrategy, cur.OcrServerURL, cur.GoogleAPIKey,
-		cur.ChatBackend, cur.SummaryChatBackend, cur.JudgeChatBackend, cur.RubyBackend,
+		cur.ChatBackend, cur.SummaryChatBackend, cur.JudgeChatBackend, cur.RubyBackend, cur.DigestTopic,
 		now)
 	return err
 }

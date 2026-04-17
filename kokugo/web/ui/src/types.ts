@@ -10,6 +10,8 @@ export interface Exercise {
   scorePercent?: number;
   assignmentId?: string;
   assignmentSort?: number;
+  /** Cached 速読 文節 (HTML fragments), when present and passage unchanged */
+  speedReadHtmlSegments?: string[];
 }
 
 /** One scan session (e.g. weekly homework) containing one or more exercises. */
@@ -68,6 +70,7 @@ export interface AppSettingsResponse {
   envSummaryChatBackend: string;
   envJudgeChatBackend: string;
   updatedAt?: string;
+  digestTopic?: string;
 }
 
 export interface OllamaCheckResponse {
@@ -121,6 +124,16 @@ export interface VocabCard {
   reading: string;
   meaning: string;
   examples: string[];
+}
+
+export interface WeeklyDigest {
+  id: string;
+  topic: string;
+  subTopic: string;
+  content: string;
+  status: string;
+  createdAt: string;
+  completedAt?: string;
 }
 
 export interface QuestionCheckResult {

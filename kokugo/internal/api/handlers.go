@@ -543,7 +543,7 @@ func (s *Server) ParseExercise(w http.ResponseWriter, r *http.Request) {
 	}
 	firstTitle := ""
 	if len(blocks) > 0 {
-		firstTitle = blocks[0].Title
+		firstTitle = store.NormalizeExerciseTitle(blocks[0].Title)
 	}
 	s.json(w, http.StatusOK, map[string]any{
 		"ok":                true,
@@ -1367,9 +1367,15 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/exercises/{id}/questions/{questionId}/solution", s.GetQuestionSolution)
 	mux.HandleFunc("POST /api/exercises/{id}/explain-selection", s.ExplainPassageSelection)
 	mux.HandleFunc("GET /api/exercises/{id}/speed-read-segments", s.SpeedReadSegments)
+	mux.HandleFunc("POST /api/exercises/{id}/speed-read-segments", s.SpeedReadSegments)
 	mux.HandleFunc("POST /api/prints/{id}/summary", s.GeneratePrintSummary)
 	mux.HandleFunc("GET /api/prints/{id}/summary", s.GetPrintSummary)
 	mux.HandleFunc("GET /api/history", s.History)
 	mux.HandleFunc("GET /api/reminders/monthly", s.MonthlyReminder)
 	mux.HandleFunc("POST /api/vocab/{id}/review", s.ReviewCard)
+	mux.HandleFunc("GET /api/digests/topic", s.GetWeeklyDigestTopic)
+	mux.HandleFunc("PUT /api/digests/topic", s.PutWeeklyDigestTopic)
+	mux.HandleFunc("POST /api/digests/topic", s.PutWeeklyDigestTopic)
+	mux.HandleFunc("GET /api/digests/weekly", s.ListWeeklyDigests)
+	mux.HandleFunc("POST /api/digests/weekly/{id}/complete", s.CompleteWeeklyDigest)
 }

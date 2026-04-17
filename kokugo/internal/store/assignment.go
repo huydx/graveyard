@@ -77,7 +77,9 @@ func (s *Store) copyExercisePagesTx(ctx context.Context, tx *sql.Tx, fromID, toI
 
 func (s *Store) setExerciseParsedTx(ctx context.Context, tx *sql.Tx, id, title, passage string) error {
 	res, err := tx.ExecContext(ctx, `
-		UPDATE exercises SET title = ?, passage = ?, status = 'parsed' WHERE id = ?`, title, passage, id)
+		UPDATE exercises SET title = ?, passage = ?, status = 'parsed',
+			speed_read_segments_json = '', speed_read_segments_passage = ''
+		WHERE id = ?`, title, passage, id)
 	if err != nil {
 		return err
 	}
@@ -352,7 +354,8 @@ func (s *Store) SyncAssignmentFromParsed(ctx context.Context, sourceExerciseID s
 			eid = newID
 		}
 		blockEids = append(blockEids, eid)
-		if err := s.setExerciseParsedTx(ctx, tx, eid, blocks[i].Title, blocks[i].Passage); err != nil {
+		normTitle := NormalizeExerciseTitle(blocks[i].Title)
+		if err := s.setExerciseParsedTx(ctx, tx, eid, normTitle, blocks[i].Passage); err != nil {
 			return err
 		}
 		if err := s.replaceQuestionsTx(ctx, tx, eid, blocks[i].Questions); err != nil {
