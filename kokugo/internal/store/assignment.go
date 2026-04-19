@@ -112,10 +112,12 @@ func (s *Store) replaceQuestionsTx(ctx context.Context, tx *sql.Tx, exerciseID s
 }
 
 // PrimaryExerciseID returns the exercise with assignment_sort 0 for this assignment.
-func (s *Store) PrimaryExerciseID(ctx context.Context, assignmentID string) (string, error) {
+func (s *Store) PrimaryExerciseID(ctx context.Context, userID, assignmentID string) (string, error) {
 	var id string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id FROM exercises WHERE assignment_id = ? AND assignment_sort = 0`, assignmentID).Scan(&id)
+		SELECT e.id FROM exercises e
+		INNER JOIN assignments a ON a.id = e.assignment_id AND a.user_id = ?
+		WHERE e.assignment_id = ? AND e.assignment_sort = 0`, userID, assignmentID).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", sql.ErrNoRows
 	}
@@ -123,7 +125,7 @@ func (s *Store) PrimaryExerciseID(ctx context.Context, assignmentID string) (str
 }
 
 // EnsureAssignment creates an assignment row and attaches the exercise if it was missing (legacy rows).
-func (s *Store) EnsureAssignment(ctx context.Context, exerciseID string) error {
+func (s *Store) EnsureAssignment(ctx context.Context, userID, exerciseID string) error {
 	var assignID sql.NullString
 	var created string
 	err := s.db.QueryRowContext(ctx, `
@@ -132,6 +134,13 @@ func (s *Store) EnsureAssignment(ctx context.Context, exerciseID string) error {
 		return err
 	}
 	if assignID.Valid && strings.TrimSpace(assignID.String) != "" {
+		var owner string
+		if err := s.db.QueryRowContext(ctx, `SELECT user_id FROM assignments WHERE id = ?`, assignID.String).Scan(&owner); err != nil {
+			return err
+		}
+		if owner != userID {
+			return sql.ErrNoRows
+		}
 		return nil
 	}
 	aid := uuid.NewString()
@@ -140,7 +149,7 @@ func (s *Store) EnsureAssignment(ctx context.Context, exerciseID string) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO assignments (id, created_at, subject) VALUES (?, ?, 'kokugo')`, aid, created); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO assignments (id, created_at, subject, user_id) VALUES (?, ?, 'kokugo', ?)`, aid, created, userID); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -150,9 +159,9 @@ func (s *Store) EnsureAssignment(ctx context.Context, exerciseID string) error {
 	return tx.Commit()
 }
 
-func (s *Store) AssignmentSubject(ctx context.Context, assignmentID string) (string, error) {
+func (s *Store) AssignmentSubject(ctx context.Context, userID, assignmentID string) (string, error) {
 	var subject string
-	err := s.db.QueryRowContext(ctx, `SELECT ifnull(subject, 'kokugo') FROM assignments WHERE id = ?`, assignmentID).Scan(&subject)
+	err := s.db.QueryRowContext(ctx, `SELECT ifnull(subject, 'kokugo') FROM assignments WHERE id = ? AND user_id = ?`, assignmentID, userID).Scan(&subject)
 	if err != nil {
 		return "", err
 	}
@@ -160,11 +169,13 @@ func (s *Store) AssignmentSubject(ctx context.Context, assignmentID string) (str
 }
 
 // ListExercisesInAssignment returns exercises ordered by assignment_sort.
-func (s *Store) ListExercisesInAssignment(ctx context.Context, assignmentID string) ([]Exercise, error) {
+func (s *Store) ListExercisesInAssignment(ctx context.Context, userID, assignmentID string) ([]Exercise, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, title, passage, image_path, status, created_at, completed_at, answers_json, score_percent,
-		       assignment_id, assignment_sort
-		FROM exercises WHERE assignment_id = ? ORDER BY assignment_sort`, assignmentID)
+		SELECT e.id, e.title, e.passage, e.image_path, e.status, e.created_at, e.completed_at, e.answers_json, e.score_percent,
+		       e.assignment_id, e.assignment_sort
+		FROM exercises e
+		INNER JOIN assignments a ON a.id = e.assignment_id AND a.user_id = ?
+		WHERE e.assignment_id = ? ORDER BY e.assignment_sort`, userID, assignmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -200,17 +211,17 @@ func (s *Store) ListExercisesInAssignment(ctx context.Context, assignmentID stri
 }
 
 // GetAssignmentGroup loads one assignment and its exercises.
-func (s *Store) GetAssignmentGroup(ctx context.Context, assignmentID string) (*AssignmentGroup, error) {
+func (s *Store) GetAssignmentGroup(ctx context.Context, userID, assignmentID string) (*AssignmentGroup, error) {
 	var created, title string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT created_at, ifnull(title, '') FROM assignments WHERE id = ?`, assignmentID).Scan(&created, &title)
+		SELECT created_at, ifnull(title, '') FROM assignments WHERE id = ? AND user_id = ?`, assignmentID, userID).Scan(&created, &title)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, sql.ErrNoRows
 	}
 	if err != nil {
 		return nil, err
 	}
-	exs, err := s.ListExercisesInAssignment(ctx, assignmentID)
+	exs, err := s.ListExercisesInAssignment(ctx, userID, assignmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -219,8 +230,8 @@ func (s *Store) GetAssignmentGroup(ctx context.Context, assignmentID string) (*A
 }
 
 // UpdateAssignmentTitle sets the user-visible print title (assignment row).
-func (s *Store) UpdateAssignmentTitle(ctx context.Context, assignmentID, title string) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE assignments SET title = ? WHERE id = ?`, title, assignmentID)
+func (s *Store) UpdateAssignmentTitle(ctx context.Context, userID, assignmentID, title string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE assignments SET title = ? WHERE id = ? AND user_id = ?`, title, assignmentID, userID)
 	if err != nil {
 		return err
 	}
@@ -235,11 +246,11 @@ func (s *Store) UpdateAssignmentTitle(ctx context.Context, assignmentID, title s
 }
 
 // ListAssignmentsForHistory returns recent assignments with nested exercises.
-func (s *Store) ListAssignmentsForHistory(ctx context.Context, limit int) ([]AssignmentGroup, error) {
-	return s.ListAssignmentsForHistoryBySubject(ctx, limit, "kokugo")
+func (s *Store) ListAssignmentsForHistory(ctx context.Context, userID string, limit int) ([]AssignmentGroup, error) {
+	return s.ListAssignmentsForHistoryBySubject(ctx, userID, limit, "kokugo")
 }
 
-func (s *Store) ListAssignmentsForHistoryBySubject(ctx context.Context, limit int, subject string) ([]AssignmentGroup, error) {
+func (s *Store) ListAssignmentsForHistoryBySubject(ctx context.Context, userID string, limit int, subject string) ([]AssignmentGroup, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -249,8 +260,8 @@ func (s *Store) ListAssignmentsForHistoryBySubject(ctx context.Context, limit in
 	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, created_at, ifnull(title, '') FROM assignments
-		WHERE ifnull(subject, 'kokugo') = ?
-		ORDER BY datetime(created_at) DESC LIMIT ?`, subject, limit)
+		WHERE user_id = ? AND ifnull(subject, 'kokugo') = ?
+		ORDER BY datetime(created_at) DESC LIMIT ?`, userID, subject, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +284,7 @@ func (s *Store) ListAssignmentsForHistoryBySubject(ctx context.Context, limit in
 	}
 	out := make([]AssignmentGroup, 0, len(ids))
 	for i, aid := range ids {
-		exs, err := s.ListExercisesInAssignment(ctx, aid)
+		exs, err := s.ListExercisesInAssignment(ctx, userID, aid)
 		if err != nil {
 			return nil, err
 		}
@@ -288,14 +299,14 @@ func (s *Store) ListAssignmentsForHistoryBySubject(ctx context.Context, limit in
 
 // SyncAssignmentFromParsed applies parse blocks starting at sourceExerciseID (must be draft, with images).
 // Earlier exercises in the assignment are left unchanged; trailing rows from the same scan tail may be removed.
-func (s *Store) SyncAssignmentFromParsed(ctx context.Context, sourceExerciseID string, blocks []ParsedExerciseBlock) error {
+func (s *Store) SyncAssignmentFromParsed(ctx context.Context, userID, sourceExerciseID string, blocks []ParsedExerciseBlock) error {
 	if len(blocks) == 0 {
 		return errors.New("parse結果が空です")
 	}
-	if err := s.EnsureAssignment(ctx, sourceExerciseID); err != nil {
+	if err := s.EnsureAssignment(ctx, userID, sourceExerciseID); err != nil {
 		return err
 	}
-	source, _, err := s.GetExercise(ctx, sourceExerciseID)
+	source, _, err := s.GetExercise(ctx, userID, sourceExerciseID)
 	if err != nil {
 		return err
 	}
@@ -306,7 +317,7 @@ func (s *Store) SyncAssignmentFromParsed(ctx context.Context, sourceExerciseID s
 	if aid == "" {
 		return errors.New("assignment_id が設定されていません")
 	}
-	existing, err := s.ListExercisesInAssignment(ctx, aid)
+	existing, err := s.ListExercisesInAssignment(ctx, userID, aid)
 	if err != nil {
 		return err
 	}
@@ -393,8 +404,8 @@ func (s *Store) SyncAssignmentFromParsed(ctx context.Context, sourceExerciseID s
 	return tx.Commit()
 }
 
-func (s *Store) deleteExerciseOrAssignment(ctx context.Context, id string) ([]string, error) {
-	ex, _, err := s.GetExercise(ctx, id)
+func (s *Store) deleteExerciseOrAssignment(ctx context.Context, userID, id string) ([]string, error) {
+	ex, _, err := s.GetExercise(ctx, userID, id)
 	if err != nil {
 		return nil, err
 	}

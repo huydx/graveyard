@@ -18,12 +18,18 @@ func (s *Server) GetSettings(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusMethodNotAllowed, "GET のみ")
 		return
 	}
+	uid := UserIDFromCtx(r.Context())
+	u, err := s.Store.GetUserByID(r.Context(), uid)
+	if err != nil {
+		s.err(w, http.StatusUnauthorized, "ログインが必要です")
+		return
+	}
 	db, err := s.Store.GetAppSettings(r.Context())
 	if err != nil {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	_, effGoogleKey := MergeAppLLM(s.Cfg, db)
+	effGoogleKey := strings.TrimSpace(u.GoogleAPIKey)
 	effSum := MergeSummaryBackend(s.Cfg, db)
 	effJudge := MergeJudgeBackend(s.Cfg, db)
 	effOllamaChat := EffectiveOllamaChatModel(s.Cfg, db)
@@ -49,9 +55,9 @@ func (s *Server) GetSettings(w http.ResponseWriter, r *http.Request) {
 		"judgeChatBackend":   stored(db.JudgeChatBackend),
 		"chatBackend":        stored(db.ChatBackend),
 
-		"hasGeminiKey":       strings.TrimSpace(db.GoogleAPIKey) != "",
-		"geminiKeyEffective": strings.TrimSpace(effGoogleKey) != "",
-		"digestTopic":        strings.TrimSpace(db.DigestTopic),
+		"hasGeminiKey":       effGoogleKey != "",
+		"geminiKeyEffective": effGoogleKey != "",
+		"digestTopic":        strings.TrimSpace(u.DigestTopic),
 
 		"summaryChatBackendEffective": effSum,
 		"judgeChatBackendEffective":   effJudge,
@@ -107,12 +113,13 @@ func validateChatBackendField(v string) (string, bool) {
 	return cb, true
 }
 
-// PutSettings updates persisted settings and reloads LLM clients.
+// PutSettings updates persisted settings and reloads LLM clients for the current user.
 func (s *Server) PutSettings(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut && r.Method != http.MethodPost {
 		s.err(w, http.StatusMethodNotAllowed, "PUT または POST")
 		return
 	}
+	uid := UserIDFromCtx(r.Context())
 	var body putSettingsBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		s.err(w, http.StatusBadRequest, "JSONが不正です")
@@ -165,21 +172,30 @@ func (s *Server) PutSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	clearKey := body.ClearGoogleAPIKey != nil && *body.ClearGoogleAPIKey
-	patch.ClearGoogleKey = clearKey
-	if !clearKey && body.GoogleAPIKey != nil {
-		patch.GoogleAPIKey = body.GoogleAPIKey
-	}
-	if body.DigestTopic != nil {
-		patch.DigestTopic = body.DigestTopic
-	}
-
 	if err := s.Store.PatchAppSettings(r.Context(), patch); err != nil {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := s.ReloadLLM(r.Context()); err != nil {
-		log.Printf("settings: ReloadLLM: %v", err)
+
+	userPatch := store.UserGeminiDigestPatch{}
+	if body.ClearGoogleAPIKey != nil && *body.ClearGoogleAPIKey {
+		userPatch.ClearGoogleAPIKey = true
+	} else if body.GoogleAPIKey != nil {
+		userPatch.GoogleAPIKey = body.GoogleAPIKey
+	}
+	if body.DigestTopic != nil {
+		userPatch.DigestTopic = body.DigestTopic
+	}
+	if userPatch.GoogleAPIKey != nil || userPatch.ClearGoogleAPIKey || userPatch.DigestTopic != nil {
+		if err := s.Store.PatchUserGeminiAndDigest(r.Context(), uid, userPatch); err != nil {
+			s.err(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+
+	s.invalidateLLMUser(uid)
+	if err := s.reloadLLMForUser(r.Context(), uid); err != nil {
+		log.Printf("settings: reload LLM user=%s: %v", uid, err)
 		s.err(w, http.StatusInternalServerError, "設定の反映に失敗しました")
 		return
 	}
@@ -201,7 +217,7 @@ func (s *Server) GetOllamaCheck(w http.ResponseWriter, r *http.Request) {
 			s.err(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		base, _ = MergeAppLLM(s.Cfg, db)
+		base = MergeOllamaURL(s.Cfg, db)
 	}
 	models, err := ollama.ListLocalModelNames(r.Context(), base)
 	if err != nil {

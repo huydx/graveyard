@@ -197,6 +197,9 @@ func (s *Store) migrate() error {
 			return fmt.Errorf("migrate exercises assignment_sort: %w", err)
 		}
 	}
+	if err := s.migrateUsersAndTenancy(); err != nil {
+		return err
+	}
 	if err := s.backfillAssignments(); err != nil {
 		return err
 	}
@@ -232,6 +235,10 @@ func (s *Store) migrate() error {
 
 func (s *Store) backfillAssignments() error {
 	ctx := context.Background()
+	adminID, err := s.adminUserID(ctx)
+	if err != nil {
+		return fmt.Errorf("backfill assignments: admin user: %w", err)
+	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, created_at FROM exercises
 		WHERE assignment_id IS NULL OR trim(ifnull(assignment_id, '')) = ''`)
@@ -259,7 +266,7 @@ func (s *Store) backfillAssignments() error {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO assignments (id, created_at, subject) VALUES (?, ?, 'kokugo')`, aid, p.created); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO assignments (id, created_at, subject, user_id) VALUES (?, ?, 'kokugo', ?)`, aid, p.created, adminID); err != nil {
 			_ = tx.Rollback()
 			return err
 		}
@@ -303,7 +310,7 @@ type Question struct {
 	FocusWord     string   `json:"focusWord"`
 }
 
-func (s *Store) CreateExerciseDraft(ctx context.Context, imagePath string) (*Exercise, error) {
+func (s *Store) CreateExerciseDraft(ctx context.Context, userID, imagePath string) (*Exercise, error) {
 	id := uuid.NewString()
 	now := time.Now().UTC()
 	ts := now.Format(time.RFC3339)
@@ -314,7 +321,7 @@ func (s *Store) CreateExerciseDraft(ctx context.Context, imagePath string) (*Exe
 	defer func() { _ = tx.Rollback() }()
 	aid := uuid.NewString()
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO assignments (id, created_at, subject) VALUES (?, ?, 'kokugo')`, aid, ts); err != nil {
+		INSERT INTO assignments (id, created_at, subject, user_id) VALUES (?, ?, 'kokugo', ?)`, aid, ts, userID); err != nil {
 		return nil, err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -336,8 +343,8 @@ func (s *Store) CreateExerciseDraft(ctx context.Context, imagePath string) (*Exe
 }
 
 // CreateEmptyPrintDraft creates an assignment and a primary draft exercise with no pages yet (画像はあとから追加).
-func (s *Store) CreateEmptyPrintDraft(ctx context.Context) (*Exercise, error) {
-	return s.CreateEmptyPrintDraftForSubject(ctx, "kokugo")
+func (s *Store) CreateEmptyPrintDraft(ctx context.Context, userID string) (*Exercise, error) {
+	return s.CreateEmptyPrintDraftForSubject(ctx, userID, "kokugo")
 }
 
 func normalizeSubject(subject string) string {
@@ -348,7 +355,7 @@ func normalizeSubject(subject string) string {
 	return "kokugo"
 }
 
-func (s *Store) CreateEmptyPrintDraftForSubject(ctx context.Context, subject string) (*Exercise, error) {
+func (s *Store) CreateEmptyPrintDraftForSubject(ctx context.Context, userID, subject string) (*Exercise, error) {
 	id := uuid.NewString()
 	now := time.Now().UTC()
 	ts := now.Format(time.RFC3339)
@@ -360,7 +367,7 @@ func (s *Store) CreateEmptyPrintDraftForSubject(ctx context.Context, subject str
 	defer func() { _ = tx.Rollback() }()
 	aid := uuid.NewString()
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO assignments (id, created_at, subject) VALUES (?, ?, ?)`, aid, ts, subject); err != nil {
+		INSERT INTO assignments (id, created_at, subject, user_id) VALUES (?, ?, ?, ?)`, aid, ts, subject, userID); err != nil {
 		return nil, err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -378,10 +385,12 @@ func (s *Store) CreateEmptyPrintDraftForSubject(ctx context.Context, subject str
 }
 
 // AppendDraftExerciseToAssignment adds an empty draft row at the end of a print (assignment).
-func (s *Store) AppendDraftExerciseToAssignment(ctx context.Context, assignmentID string) (*Exercise, error) {
+func (s *Store) AppendDraftExerciseToAssignment(ctx context.Context, userID, assignmentID string) (*Exercise, error) {
 	var maxSort sql.NullInt64
 	err := s.db.QueryRowContext(ctx, `
-		SELECT MAX(assignment_sort) FROM exercises WHERE assignment_id = ?`, assignmentID).Scan(&maxSort)
+		SELECT MAX(e.assignment_sort) FROM exercises e
+		INNER JOIN assignments a ON a.id = e.assignment_id AND a.user_id = ?
+		WHERE e.assignment_id = ?`, userID, assignmentID).Scan(&maxSort)
 	if err != nil {
 		return nil, err
 	}
@@ -398,7 +407,7 @@ func (s *Store) AppendDraftExerciseToAssignment(ctx context.Context, assignmentI
 		id, ts, assignmentID, nextSort); err != nil {
 		return nil, err
 	}
-	ex, _, err := s.GetExercise(ctx, id)
+	ex, _, err := s.GetExercise(ctx, userID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -417,7 +426,7 @@ type RemovePageResult struct {
 	FilesToRemove   []string
 }
 
-func (s *Store) RemoveExercisePageAt(ctx context.Context, exerciseID string, pageIndex int) (RemovePageResult, error) {
+func (s *Store) RemoveExercisePageAt(ctx context.Context, userID, exerciseID string, pageIndex int) (RemovePageResult, error) {
 	var zero RemovePageResult
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -426,7 +435,10 @@ func (s *Store) RemoveExercisePageAt(ctx context.Context, exerciseID string, pag
 	defer func() { _ = tx.Rollback() }()
 
 	var status string
-	err = tx.QueryRowContext(ctx, `SELECT status FROM exercises WHERE id = ?`, exerciseID).Scan(&status)
+	err = tx.QueryRowContext(ctx, `
+		SELECT e.status FROM exercises e
+		INNER JOIN assignments a ON a.id = e.assignment_id AND a.user_id = ?
+		WHERE e.id = ?`, userID, exerciseID).Scan(&status)
 	if errors.Is(err, sql.ErrNoRows) {
 		return zero, sql.ErrNoRows
 	}
@@ -497,7 +509,14 @@ func (s *Store) RemoveExercisePageAt(ctx context.Context, exerciseID string, pag
 	return RemovePageResult{ImagePaths: newPaths, FilesToRemove: []string{removed}}, nil
 }
 
-func (s *Store) AddExercisePage(ctx context.Context, exerciseID, imagePath string) error {
+func (s *Store) AddExercisePage(ctx context.Context, userID, exerciseID, imagePath string) error {
+	var own int
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM exercises e
+		INNER JOIN assignments a ON a.id = e.assignment_id AND a.user_id = ?
+		WHERE e.id = ?`, userID, exerciseID).Scan(&own); err != nil || own == 0 {
+		return sql.ErrNoRows
+	}
 	var max sql.NullInt64
 	err := s.db.QueryRowContext(ctx, `
 		SELECT MAX(sort_order) FROM exercise_pages WHERE exercise_id = ?`, exerciseID).Scan(&max)
@@ -554,11 +573,13 @@ func (s *Store) attachImagePaths(ctx context.Context, ex *Exercise) error {
 	return nil
 }
 
-func (s *Store) SetExerciseParsed(ctx context.Context, id, title, passage string) error {
+func (s *Store) SetExerciseParsed(ctx context.Context, userID, id, title, passage string) error {
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE exercises SET title = ?, passage = ?, status = 'parsed',
 			speed_read_segments_json = '', speed_read_segments_passage = ''
-		WHERE id = ?`, title, passage, id)
+		WHERE id = ? AND EXISTS (
+			SELECT 1 FROM assignments a WHERE a.id = exercises.assignment_id AND a.user_id = ?
+		)`, title, passage, id, userID)
 	if err != nil {
 		return err
 	}
@@ -569,12 +590,19 @@ func (s *Store) SetExerciseParsed(ctx context.Context, id, title, passage string
 	return nil
 }
 
-func (s *Store) ReplaceQuestions(ctx context.Context, exerciseID string, qs []Question) error {
+func (s *Store) ReplaceQuestions(ctx context.Context, userID, exerciseID string, qs []Question) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	var own int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM exercises e
+		INNER JOIN assignments a ON a.id = e.assignment_id AND a.user_id = ?
+		WHERE e.id = ?`, userID, exerciseID).Scan(&own); err != nil || own == 0 {
+		return sql.ErrNoRows
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM questions WHERE exercise_id = ?`, exerciseID); err != nil {
 		return err
 	}
@@ -595,16 +623,18 @@ func (s *Store) ReplaceQuestions(ctx context.Context, exerciseID string, qs []Qu
 	return tx.Commit()
 }
 
-func (s *Store) GetExercise(ctx context.Context, id string) (*Exercise, []Question, error) {
+func (s *Store) GetExercise(ctx context.Context, userID, id string) (*Exercise, []Question, error) {
 	var ex Exercise
 	var created, completed sql.NullString
 	var assignID sql.NullString
 	var speedJSON, speedPassage sql.NullString
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, title, passage, image_path, status, created_at, completed_at, answers_json, score_percent,
-		       assignment_id, assignment_sort,
-		       ifnull(speed_read_segments_json, ''), ifnull(speed_read_segments_passage, '')
-		FROM exercises WHERE id = ?`, id).Scan(
+		SELECT e.id, e.title, e.passage, e.image_path, e.status, e.created_at, e.completed_at, e.answers_json, e.score_percent,
+		       e.assignment_id, e.assignment_sort,
+		       ifnull(e.speed_read_segments_json, ''), ifnull(e.speed_read_segments_passage, '')
+		FROM exercises e
+		INNER JOIN assignments a ON a.id = e.assignment_id AND a.user_id = ?
+		WHERE e.id = ?`, userID, id).Scan(
 		&ex.ID, &ex.Title, &ex.Passage, &ex.ImagePath, &ex.Status, &created, &completed, &ex.AnswersJSON, &ex.ScorePercent,
 		&assignID, &ex.AssignmentSort, &speedJSON, &speedPassage)
 	if assignID.Valid {
@@ -654,14 +684,16 @@ func (s *Store) GetExercise(ctx context.Context, id string) (*Exercise, []Questi
 }
 
 // SaveSpeedReadSegments persists bunsetsu HTML segments for the current passage (must match exercises.passage).
-func (s *Store) SaveSpeedReadSegments(ctx context.Context, exerciseID, passage string, htmlSegments []string) error {
+func (s *Store) SaveSpeedReadSegments(ctx context.Context, userID, exerciseID, passage string, htmlSegments []string) error {
 	b, err := json.Marshal(htmlSegments)
 	if err != nil {
 		return err
 	}
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE exercises SET speed_read_segments_json = ?, speed_read_segments_passage = ?
-		WHERE id = ?`, string(b), passage, exerciseID)
+		WHERE id = ? AND EXISTS (
+			SELECT 1 FROM assignments a WHERE a.id = exercises.assignment_id AND a.user_id = ?
+		)`, string(b), passage, exerciseID, userID)
 	if err != nil {
 		return err
 	}
@@ -672,7 +704,7 @@ func (s *Store) SaveSpeedReadSegments(ctx context.Context, exerciseID, passage s
 	return nil
 }
 
-func (s *Store) SaveAnswersAndComplete(ctx context.Context, exerciseID string, answers map[string]string, scorePercent int) error {
+func (s *Store) SaveAnswersAndComplete(ctx context.Context, userID, exerciseID string, answers map[string]string, scorePercent int) error {
 	b, err := json.Marshal(answers)
 	if err != nil {
 		return err
@@ -680,7 +712,9 @@ func (s *Store) SaveAnswersAndComplete(ctx context.Context, exerciseID string, a
 	now := time.Now().UTC().Format(time.RFC3339)
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE exercises SET answers_json = ?, score_percent = ?, status = 'completed', completed_at = ?
-		WHERE id = ?`, string(b), scorePercent, now, exerciseID)
+		WHERE id = ? AND EXISTS (
+			SELECT 1 FROM assignments a WHERE a.id = exercises.assignment_id AND a.user_id = ?
+		)`, string(b), scorePercent, now, exerciseID, userID)
 	if err != nil {
 		return err
 	}
@@ -691,14 +725,16 @@ func (s *Store) SaveAnswersAndComplete(ctx context.Context, exerciseID string, a
 	return nil
 }
 
-func (s *Store) ListExercises(ctx context.Context, limit int) ([]Exercise, error) {
+func (s *Store) ListExercises(ctx context.Context, userID string, limit int) ([]Exercise, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, title, passage, image_path, status, created_at, completed_at, score_percent,
-		       assignment_id, assignment_sort
-		FROM exercises ORDER BY created_at DESC LIMIT ?`, limit)
+		SELECT e.id, e.title, e.passage, e.image_path, e.status, e.created_at, e.completed_at, e.score_percent,
+		       e.assignment_id, e.assignment_sort
+		FROM exercises e
+		INNER JOIN assignments a ON a.id = e.assignment_id AND a.user_id = ?
+		ORDER BY e.created_at DESC LIMIT ?`, userID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -735,13 +771,20 @@ func (s *Store) ListExercises(ctx context.Context, limit int) ([]Exercise, error
 
 // DeleteExercise removes the exercise (or the whole assignment when deleting the primary exercise at assignmentSort 0).
 // Returns image paths that are no longer referenced and may be unlinked on disk.
-func (s *Store) DeleteExercise(ctx context.Context, id string) ([]string, error) {
-	return s.deleteExerciseOrAssignment(ctx, id)
+func (s *Store) DeleteExercise(ctx context.Context, userID, id string) ([]string, error) {
+	return s.deleteExerciseOrAssignment(ctx, userID, id)
 }
 
 // --- Summary & vocab ---
 
-func (s *Store) SaveSummary(ctx context.Context, exerciseID, summaryJSON string) error {
+func (s *Store) SaveSummary(ctx context.Context, userID, exerciseID, summaryJSON string) error {
+	var own int
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM exercises e
+		INNER JOIN assignments a ON a.id = e.assignment_id AND a.user_id = ?
+		WHERE e.id = ?`, userID, exerciseID).Scan(&own); err != nil || own == 0 {
+		return sql.ErrNoRows
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO exercise_summaries (exercise_id, summary_json, created_at)
@@ -751,17 +794,31 @@ func (s *Store) SaveSummary(ctx context.Context, exerciseID, summaryJSON string)
 	return err
 }
 
-func (s *Store) GetSummary(ctx context.Context, exerciseID string) (string, error) {
+func (s *Store) GetSummary(ctx context.Context, userID, exerciseID string) (string, error) {
+	var own int
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM exercises e
+		INNER JOIN assignments a ON a.id = e.assignment_id AND a.user_id = ?
+		WHERE e.id = ?`, userID, exerciseID).Scan(&own); err != nil || own == 0 {
+		return "", sql.ErrNoRows
+	}
 	var j string
 	err := s.db.QueryRowContext(ctx, `SELECT summary_json FROM exercise_summaries WHERE exercise_id = ?`, exerciseID).Scan(&j)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
-	return j, err
+	if err != nil {
+		return "", err
+	}
+	return j, nil
 }
 
 // SavePrintSummary upserts the AI summary for one assignment (print).
-func (s *Store) SavePrintSummary(ctx context.Context, assignmentID, summaryJSON string) error {
+func (s *Store) SavePrintSummary(ctx context.Context, userID, assignmentID, summaryJSON string) error {
+	var own int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM assignments WHERE id = ? AND user_id = ?`, assignmentID, userID).Scan(&own); err != nil || own == 0 {
+		return sql.ErrNoRows
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO print_summaries (assignment_id, summary_json, created_at)
@@ -772,7 +829,11 @@ func (s *Store) SavePrintSummary(ctx context.Context, assignmentID, summaryJSON 
 }
 
 // GetPrintSummary returns JSON for a print-level summary, or empty string if none.
-func (s *Store) GetPrintSummary(ctx context.Context, assignmentID string) (string, error) {
+func (s *Store) GetPrintSummary(ctx context.Context, userID, assignmentID string) (string, error) {
+	var own int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM assignments WHERE id = ? AND user_id = ?`, assignmentID, userID).Scan(&own); err != nil || own == 0 {
+		return "", sql.ErrNoRows
+	}
 	var j string
 	err := s.db.QueryRowContext(ctx, `SELECT summary_json FROM print_summaries WHERE assignment_id = ?`, assignmentID).Scan(&j)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -800,12 +861,19 @@ type VocabItem struct {
 	Examples []string
 }
 
-func (s *Store) InsertVocabCards(ctx context.Context, exerciseID string, items []VocabItem) error {
+func (s *Store) InsertVocabCards(ctx context.Context, userID, exerciseID string, items []VocabItem) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	var own int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM exercises e
+		INNER JOIN assignments a ON a.id = e.assignment_id AND a.user_id = ?
+		WHERE e.id = ?`, userID, exerciseID).Scan(&own); err != nil || own == 0 {
+		return sql.ErrNoRows
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM vocab_cards WHERE source_exercise_id = ?`, exerciseID); err != nil {
 		return err
 	}
@@ -826,7 +894,7 @@ func (s *Store) InsertVocabCards(ctx context.Context, exerciseID string, items [
 
 // ReplaceVocabCardsForAssignment deletes vocab rows for every exercise in the assignment, then inserts items
 // under anchorExerciseID (typically だい1). Used when a print-level summary replaces per-exercise vocabulary.
-func (s *Store) ReplaceVocabCardsForAssignment(ctx context.Context, assignmentID, anchorExerciseID string, items []VocabItem) error {
+func (s *Store) ReplaceVocabCardsForAssignment(ctx context.Context, userID, assignmentID, anchorExerciseID string, items []VocabItem) error {
 	if strings.TrimSpace(anchorExerciseID) == "" {
 		return errors.New("anchor exercise id required")
 	}
@@ -835,6 +903,10 @@ func (s *Store) ReplaceVocabCardsForAssignment(ctx context.Context, assignmentID
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	var own int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM assignments WHERE id = ? AND user_id = ?`, assignmentID, userID).Scan(&own); err != nil || own == 0 {
+		return sql.ErrNoRows
+	}
 	if _, err := tx.ExecContext(ctx, `
 		DELETE FROM vocab_cards WHERE source_exercise_id IN (
 			SELECT id FROM exercises WHERE assignment_id = ?
@@ -856,14 +928,17 @@ func (s *Store) ReplaceVocabCardsForAssignment(ctx context.Context, assignmentID
 	return tx.Commit()
 }
 
-func (s *Store) MonthlyVocab(ctx context.Context, days int) ([]VocabCard, error) {
+func (s *Store) MonthlyVocab(ctx context.Context, userID string, days int) ([]VocabCard, error) {
 	if days <= 0 {
 		days = 35
 	}
 	since := time.Now().UTC().AddDate(0, 0, -days).Format(time.RFC3339)
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, word, reading, meaning, examples_json, source_exercise_id, created_at, last_reviewed, review_count
-		FROM vocab_cards WHERE created_at >= ? ORDER BY created_at DESC`, since)
+		SELECT v.id, v.word, v.reading, v.meaning, v.examples_json, v.source_exercise_id, v.created_at, v.last_reviewed, v.review_count
+		FROM vocab_cards v
+		INNER JOIN exercises e ON e.id = v.source_exercise_id
+		INNER JOIN assignments a ON a.id = e.assignment_id AND a.user_id = ?
+		WHERE v.created_at >= ? ORDER BY v.created_at DESC`, userID, since)
 	if err != nil {
 		return nil, err
 	}
@@ -875,13 +950,16 @@ func (s *Store) MonthlyVocab(ctx context.Context, days int) ([]VocabCard, error)
 	return dedupeVocabCards(list), nil
 }
 
-func (s *Store) AllVocabForReview(ctx context.Context, limit int) ([]VocabCard, error) {
+func (s *Store) AllVocabForReview(ctx context.Context, userID string, limit int) ([]VocabCard, error) {
 	if limit <= 0 {
 		limit = 200
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, word, reading, meaning, examples_json, source_exercise_id, created_at, last_reviewed, review_count
-		FROM vocab_cards ORDER BY datetime(created_at) DESC LIMIT ?`, limit)
+		SELECT v.id, v.word, v.reading, v.meaning, v.examples_json, v.source_exercise_id, v.created_at, v.last_reviewed, v.review_count
+		FROM vocab_cards v
+		INNER JOIN exercises e ON e.id = v.source_exercise_id
+		INNER JOIN assignments a ON a.id = e.assignment_id AND a.user_id = ?
+		ORDER BY datetime(v.created_at) DESC LIMIT ?`, userID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -934,9 +1012,20 @@ func scanVocabRows(rows *sql.Rows) ([]VocabCard, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) TouchVocabReview(ctx context.Context, cardID string) error {
+func (s *Store) TouchVocabReview(ctx context.Context, userID, cardID string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE vocab_cards SET last_reviewed = ?, review_count = review_count + 1 WHERE id = ?`, now, cardID)
-	return err
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE vocab_cards SET last_reviewed = ?, review_count = review_count + 1 WHERE id = ? AND EXISTS (
+			SELECT 1 FROM exercises e
+			INNER JOIN assignments a ON a.id = e.assignment_id AND a.user_id = ?
+			WHERE e.id = vocab_cards.source_exercise_id
+		)`, now, cardID, userID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }

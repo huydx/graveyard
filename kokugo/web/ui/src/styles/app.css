@@ -2104,6 +2104,77 @@ a.btn-primary:visited {
   margin-top: 0.75rem;
 }
 
+/* Login (no app shell) */
+.login-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.25rem 3rem;
+  box-sizing: border-box;
+}
+.login-stack {
+  width: 100%;
+  max-width: 22rem;
+}
+.login-card {
+  padding: 1.5rem 1.35rem 1.65rem;
+}
+.login-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: var(--blue-900);
+  line-height: 1.35;
+}
+.login-lead {
+  margin: 0 0 1.35rem;
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.login-label {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+.login-input {
+  width: 100%;
+  min-height: var(--tap-min);
+  padding: 0 1rem;
+  border: 2px solid var(--blue-200);
+  border-radius: 14px;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--blue-900);
+  background: #fff;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.login-input:hover {
+  border-color: color-mix(in srgb, var(--blue-500) 45%, var(--blue-200));
+}
+.login-input:focus-visible {
+  outline: none;
+  border-color: var(--blue-500);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue-500) 28%, transparent);
+}
+.login-error {
+  margin: 0;
+}
+.login-submit {
+  margin-top: 0.15rem;
+}
+
 /* Super-app home (no sidebar shell) */
 .app-hub {
   min-height: 100vh;

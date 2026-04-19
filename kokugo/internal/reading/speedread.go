@@ -1,4 +1,4 @@
-package api
+package reading
 
 import (
 	"bytes"
@@ -152,12 +152,12 @@ func isKeptRuneCompactMatch(r rune) bool {
 
 // bunsetsuStrictKey matches explain-selection style: NFC + drop spaces/ZW.
 func bunsetsuStrictKey(s string) string {
-	return compactPassageMatch(s)
+	return CompactPassageMatch(s)
 }
 
 // bunsetsuLooseKey adds NFKC so full-width digits/punct and compatibility variants align with model output.
 func bunsetsuLooseKey(s string) string {
-	return compactPassageMatch(normunicode.NFKC.String(normunicode.NFC.String(s)))
+	return CompactPassageMatch(normunicode.NFKC.String(normunicode.NFC.String(s)))
 }
 
 func looseRuneContributionCount(r rune) int {
@@ -448,7 +448,8 @@ func reprojectBunsetsuOntoVisibleLoose(vis []rune, modelSegments []string) ([]st
 	return out, nil
 }
 
-func mergeBunsetsuCutsAtRuby(vis []rune, atoms []int, modelSegments []string) ([]string, error) {
+// MergeBunsetsuCutsAtRuby merges model bunsetsu boundaries respecting ruby atom boundaries.
+func MergeBunsetsuCutsAtRuby(vis []rune, atoms []int, modelSegments []string) ([]string, error) {
 	if len(vis) != len(atoms) {
 		return nil, fmt.Errorf("atom length mismatch")
 	}

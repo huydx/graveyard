@@ -51,16 +51,13 @@ func parseAppSettingTime(s string) time.Time {
 	return time.Time{}
 }
 
-// AppSettingsPatch updates only non-nil string fields. Use ClearGoogleKey to wipe stored API key.
+// AppSettingsPatch updates only non-nil string fields (global install row). Gemini key and digest topic live on users.
 type AppSettingsPatch struct {
 	OllamaBaseURL      *string
 	OllamaChatModel    *string
 	SummaryChatBackend *string
 	JudgeChatBackend   *string
 	ChatBackend        *string // legacy: if set alone, API fans out to summary + judge
-	GoogleAPIKey       *string
-	DigestTopic        *string
-	ClearGoogleKey     bool
 }
 
 // PatchAppSettings merges patch into the single settings row.
@@ -84,23 +81,15 @@ func (s *Store) PatchAppSettings(ctx context.Context, patch AppSettingsPatch) er
 	if patch.ChatBackend != nil {
 		cur.ChatBackend = strings.TrimSpace(*patch.ChatBackend)
 	}
-	if patch.ClearGoogleKey {
-		cur.GoogleAPIKey = ""
-	} else if patch.GoogleAPIKey != nil {
-		cur.GoogleAPIKey = strings.TrimSpace(*patch.GoogleAPIKey)
-	}
-	if patch.DigestTopic != nil {
-		cur.DigestTopic = strings.TrimSpace(*patch.DigestTopic)
-	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err = s.db.ExecContext(ctx, `
 		UPDATE app_settings SET
-			ollama_base_url = ?, ollama_model = ?, ollama_chat_model = ?, parse_strategy = ?, ocr_server_url = ?, google_api_key = ?,
-			chat_backend = ?, summary_chat_backend = ?, judge_chat_backend = ?, ruby_backend = ?, digest_topic = ?,
+			ollama_base_url = ?, ollama_model = ?, ollama_chat_model = ?, parse_strategy = ?, ocr_server_url = ?,
+			chat_backend = ?, summary_chat_backend = ?, judge_chat_backend = ?, ruby_backend = ?,
 			updated_at = ?
 		WHERE id = 1`,
-		cur.OllamaBaseURL, cur.OllamaModel, cur.OllamaChatModel, cur.ParseStrategy, cur.OcrServerURL, cur.GoogleAPIKey,
-		cur.ChatBackend, cur.SummaryChatBackend, cur.JudgeChatBackend, cur.RubyBackend, cur.DigestTopic,
+		cur.OllamaBaseURL, cur.OllamaModel, cur.OllamaChatModel, cur.ParseStrategy, cur.OcrServerURL,
+		cur.ChatBackend, cur.SummaryChatBackend, cur.JudgeChatBackend, cur.RubyBackend,
 		now)
 	return err
 }

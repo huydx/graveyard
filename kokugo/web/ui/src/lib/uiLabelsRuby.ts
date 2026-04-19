@@ -5,6 +5,14 @@
 
 /** Super-app shell (home + shared chrome). */
 export const superAppTitle = `<ruby>学習<rt>がくしゅう</rt></ruby>スタジオ`;
+
+export const authChecking = `<ruby>確認中<rt>かくにんちゅう</rt></ruby>…`;
+export const loginTitle = `<ruby>ログイン<rt>ろぐいん</rt></ruby>`;
+export const loginEmailLabel = `メール`;
+export const loginPasswordLabel = `<ruby>パスワード<rt>ぱすわーど</rt></ruby>`;
+export const loginSubmit = `<ruby>入<rt>はい</rt></ruby>る`;
+export const loginLead = `<ruby>国語<rt>こくご</rt></ruby>・<ruby>算数<rt>さんすう</rt></ruby>の<ruby>学習<rt>がくしゅう</rt></ruby>には、おうちの<ruby>人<rt>ひと</rt></ruby>からもらったアカウントで<ruby>入<rt>はい</rt></ruby>ってください。`;
+export const navLogout = `<ruby>ログアウト<rt>ろぐあうと</rt></ruby>`;
 export const superAppLead = `<ruby>科目<rt>かもく</rt></ruby>を<ruby>選<rt>えら</rt></ruby>んで<ruby>始<rt>はじ</rt></ruby>めましょう`;
 export const soonBadge = `<ruby>準備中<rt>じゅんびちゅう</rt></ruby>`;
 export const backToAppHub = `← <ruby>科目<rt>かもく</rt></ruby>の<ruby>一覧<rt>いちらん</rt></ruby>`;
@@ -286,7 +294,7 @@ export const parseBtnSingle = `<ruby>読取<rt>よみと</rt></ruby>る（1<ruby
 export const needOnePage = `ページが1<ruby>枚<rt>まい</rt></ruby>はいってから<ruby>読取<rt>よみと</rt></ruby>れます。`;
 
 export const settingsHead = `<ruby>設定<rt>せってい</rt></ruby>（このパソコンに<ruby>保存<rt>ほぞん</rt></ruby>）`;
-export const settingsIntro = `プリントの<ruby>読取<rt>よみと</rt></ruby>りは <strong>Gemini 3</strong>（<ruby>環境変数<rt>かんきょうへんすう</rt></ruby> <code>GEMINI_MODEL</code>、<ruby>既定<rt>きてい</rt></ruby> <code>gemini-3-flash-preview</code>）のワンショット<ruby>解析<rt>かいせき</rt></ruby>のみです。まとめ・<ruby>採点<rt>さいてん</rt></ruby>は Gemini か Ollama を<ruby>別々<rt>べつべつ</rt></ruby>に<ruby>選<rt>えら</rt></ruby>べます。API キーはここか <code>GOOGLE_API_KEY</code> で<ruby>指定<rt>してい</rt></ruby>します（DB に<ruby>値<rt>あたい</rt></ruby>があるときはそちらが<ruby>優先<rt>ゆうせん</rt></ruby>）。`;
+export const settingsIntro = `プリントの<ruby>読取<rt>よみと</rt></ruby>りは <strong>Gemini 3</strong>（<ruby>既定<rt>きてい</rt></ruby>モデル <code>gemini-3-flash-preview</code>）のワンショット<ruby>解析<rt>かいせき</rt></ruby>です。まとめ・<ruby>採点<rt>さいてん</rt></ruby>は Gemini か Ollama を<ruby>別々<rt>べつべつ</rt></ruby>に<ruby>選<rt>えら</rt></ruby>べます。Gemini の API キーはこのアカウントの<ruby>設定<rt>せってい</rt></ruby>にだけ<ruby>保存<rt>ほぞん</rt></ruby>します。`;
 export const labelOllamaServer = `Ollama サーバー（URL）`;
 export const btnConnectionCheck = `<ruby>接続<rt>せつぞく</rt></ruby><ruby>確認<rt>かくにん</rt></ruby>`;
 export const checkingBusy = `<ruby>確認<rt>かくにん</rt></ruby><ruby>中<rt>ちゅう</rt></ruby>…`;
@@ -300,7 +308,7 @@ export const placeholderKeySaved = `（<ruby>保存<rt>ほぞん</rt></ruby><rub
 export const placeholderKeyNeeded = `プリント<ruby>読取<rt>よみと</rt></ruby>り・Gemini <ruby>利用<rt>りよう</rt></ruby>に<ruby>必要<rt>ひつよう</rt></ruby>`;
 export const placeholderKeySavedPlain = "（保存済み・新しいキーで上書き）";
 export const placeholderKeyNeededPlain = "プリント読み取り・Gemini 利用に必要";
-export const clearSavedKey = `<ruby>保存<rt>ほぞん</rt></ruby>したキーをけす（<ruby>環境変数<rt>かんきょうへんすう</rt></ruby>のキーに<ruby>戻<rt>もど</rt></ruby>す）`;
+export const clearSavedKey = `<ruby>保存<rt>ほぞん</rt></ruby>したキーをけす`;
 export const saveApply = `<ruby>保存<rt>ほぞん</rt></ruby>して<ruby>反映<rt>はんえい</rt></ruby>`;
 export const savedOk = `✓ <ruby>反映<rt>はんえい</rt></ruby>しました`;
 export const effectiveModelHint = `いまの<ruby>有効<rt>ゆうこう</rt></ruby>モデル<ruby>名<rt>めい</rt></ruby>:`;
@@ -309,7 +317,7 @@ export const openOllamaListHint = `。<ruby>開<rt>ひら</rt></ruby>いたと�
 export const effectiveValueHint = `いまの<ruby>有効<rt>ゆうこう</rt></ruby><ruby>値<rt>あたい</rt></ruby>:`;
 export const transcribeGeminiOnly = `（<ruby>文字起<rt>もじお</rt></ruby>こしは Gemini のときだけ<ruby>可<rt>か</rt></ruby>）`;
 export const dbHasKey = `データベースにキーが<ruby>保存<rt>ほぞん</rt></ruby>されています（<ruby>内容<rt>ないよう</rt></ruby>は<ruby>表示<rt>ひょうじ</rt></ruby>しません）。`;
-export const dbNoKey = `データベースにはキーがありません（<ruby>空<rt>から</rt></ruby>なら<ruby>環境変数<rt>かんきょうへんすう</rt></ruby> GOOGLE_API_KEY を<ruby>使<rt>つか</rt></ruby>います）。`;
+export const dbNoKey = `このアカウントに<ruby>保存<rt>ほぞん</rt></ruby>した Gemini キーはまだありません。`;
 export const geminiKeyAvailable = ` いまの<ruby>設定<rt>せってい</rt></ruby>では Gemini <ruby>用<rt>よう</rt></ruby>のキーが<ruby>利用<rt>りよう</rt></ruby><ruby>可能<rt>かのう</rt></ruby>です。`;
 export const geminiKeyMissing = ` いまの<ruby>設定<rt>せってい</rt></ruby>では Gemini <ruby>用<rt>よう</rt></ruby>のキーがありません。`;
 
@@ -352,7 +360,7 @@ export const exerciseRowNoTitle = `（<ruby>無題<rt>むだい</rt></ruby>）`;
 /** `<option>` cannot contain HTML; use kanji without ruby. */
 export const settingsBackendOptEnvPlain =
   "環境変数の既定（個別変数 → KOKUGO_CHAT_BACKEND、未設定時は gemini）";
-export const settingsBackendOptGeminiPlain = "gemini（要 API キー：DB または環境変数）";
+export const settingsBackendOptGeminiPlain = "gemini（このアカウントの API キーが必要）";
 export const settingsBackendOptOllamaPlain = "ollama（OLLAMA_CHAT_MODEL / OLLAMA_MODEL）";
 export const settingsOptSavingPlain = (name: string) => `${name}（保存中・一覧に未反映）`;
 export const settingsOptEnvOllamaPlain = (current?: string) =>
@@ -371,6 +379,7 @@ export function titleHtmlForPath(pathname: string): string {
 
 function titleHtmlForKokugoPath(rest: string): string {
   const path = rest.startsWith("/") ? rest : `/${rest}`;
+  if (path.startsWith("/login")) return loginTitle;
   if (path === "/prints/new") return titleNewPrint;
   if (/\/prints\/[^/]+\/scan/.test(path)) return titleScan;
   if (path.startsWith("/prints/") && path !== "/prints") return titlePrint;

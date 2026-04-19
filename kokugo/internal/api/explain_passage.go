@@ -4,71 +4,12 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"regexp"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/huydx/kokugo/internal/ai"
-	normunicode "golang.org/x/text/unicode/norm"
+	"github.com/huydx/kokugo/internal/reading"
 )
-
-var htmlTagStripRe = regexp.MustCompile(`<[^>]+>`)
-var rtBlockRe = regexp.MustCompile(`(?is)<rt[^>]*>.*?</rt>`)
-var rpBlockRe = regexp.MustCompile(`(?is)<rp[^>]*>.*?</rp>`)
-
-func stripHTMLToPlain(s string) string {
-	return strings.TrimSpace(htmlTagStripRe.ReplaceAllString(s, ""))
-}
-
-// passagePlainForMatch approximates visible reading text: drop furigana (rt/rp) then strip remaining tags.
-func passagePlainForMatch(html string) string {
-	s := rtBlockRe.ReplaceAllString(html, "")
-	s = rpBlockRe.ReplaceAllString(s, "")
-	return stripHTMLToPlain(s)
-}
-
-func compactPassageMatch(s string) string {
-	s = normunicode.NFC.String(s)
-	var b strings.Builder
-	for _, r := range s {
-		// Zero-width / joiners often appear in WebKit selections; drop for stable matching.
-		switch r {
-		case '\u200b', '\u200c', '\u200d', '\ufeff', '\u2060':
-			continue
-		}
-		if r >= 0xfe00 && r <= 0xfe0f {
-			continue
-		}
-		if !unicode.IsSpace(r) {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
-
-func substringLikelyInPassage(sel, pass string) bool {
-	if sel == "" {
-		return false
-	}
-	if len(sel) > len(pass) {
-		return false
-	}
-	return strings.Contains(pass, sel)
-}
-
-// selectionLikelyFromPassage checks that the user's highlight appears inside the passage (HTML stripped, spaces ignored).
-// WebKit (iPad/Safari) Range.toString() often includes <rt> furigana; passagePlainForMatch drops rt, so we also match against
-// all text left after stripping tags (document order), which includes readings.
-func selectionLikelyFromPassage(selection, passageHTML string) bool {
-	sel := compactPassageMatch(strings.TrimSpace(selection))
-	if sel == "" {
-		return false
-	}
-	passVisible := compactPassageMatch(passagePlainForMatch(passageHTML))
-	passWithReadings := compactPassageMatch(stripHTMLToPlain(passageHTML))
-	return substringLikelyInPassage(sel, passVisible) || substringLikelyInPassage(sel, passWithReadings)
-}
 
 type explainPassageBody struct {
 	Selection string `json:"selection"`
@@ -87,7 +28,7 @@ func (s *Server) ExplainPassageSelection(w http.ResponseWriter, r *http.Request)
 	}
 	var body explainPassageBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		s.err(w, http.StatusBadRequest, "JSONが不正です")
+		s.err(w, http.StatusBadRequest, "JSONが読めません")
 		return
 	}
 	sel := strings.TrimSpace(body.Selection)
@@ -99,7 +40,7 @@ func (s *Server) ExplainPassageSelection(w http.ResponseWriter, r *http.Request)
 		s.err(w, http.StatusBadRequest, "選んだ部分が長すぎます")
 		return
 	}
-	ex, _, err := s.Store.GetExercise(r.Context(), id)
+	ex, _, err := s.Store.GetExercise(r.Context(), UserIDFromCtx(r.Context()), id)
 	if err != nil {
 		s.err(w, http.StatusNotFound, "見つかりません")
 		return
@@ -109,11 +50,11 @@ func (s *Server) ExplainPassageSelection(w http.ResponseWriter, r *http.Request)
 		s.err(w, http.StatusBadRequest, "本文がありません")
 		return
 	}
-	if !selectionLikelyFromPassage(sel, passage) {
+	if !reading.SelectionLikelyFromPassage(sel, passage) {
 		s.err(w, http.StatusBadRequest, "選んだ部分が本文の中に見つかりません。もういちどなぞってください")
 		return
 	}
-	rt := s.lm()
+	rt := s.lmFor(UserIDFromCtx(r.Context()))
 	if rt.judgeChat == nil {
 		s.err(w, http.StatusServiceUnavailable, "説明にはチャット用AI（Gemini または Ollama の採点バックエンド）が必要です")
 		return
@@ -123,6 +64,57 @@ func (s *Server) ExplainPassageSelection(w http.ResponseWriter, r *http.Request)
 	out, err := ai.ExplainPassageSelection(r.Context(), rt.judgeChat, rt.judgeModel, ex.Title, passage, sel)
 	if err != nil {
 		log.Printf("explain_passage: FAILED exercise_id=%s err=%v", id, err)
+		s.err(w, http.StatusBadGateway, "説明の生成に失敗しました: "+err.Error())
+		return
+	}
+	s.json(w, http.StatusOK, map[string]any{
+		"importantKeywords": out.ImportantKeywords,
+		"shortMeaning":      out.ShortMeaning,
+		"explanation":       out.Explanation,
+	})
+}
+
+// ExplainReadingSelection explains a highlight for arbitrary passage HTML (no exercise row).
+func (s *Server) ExplainReadingSelection(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.err(w, http.StatusMethodNotAllowed, "POST のみ")
+		return
+	}
+	var body struct {
+		Title     string `json:"title"`
+		Passage   string `json:"passage"`
+		Selection string `json:"selection"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		s.err(w, http.StatusBadRequest, "JSONが読めません")
+		return
+	}
+	title := strings.TrimSpace(body.Title)
+	passage := strings.TrimSpace(body.Passage)
+	sel := strings.TrimSpace(body.Selection)
+	if passage == "" {
+		s.err(w, http.StatusBadRequest, "passage が必要です")
+		return
+	}
+	if sel == "" {
+		s.err(w, http.StatusBadRequest, "selection が必要です")
+		return
+	}
+	if utf8.RuneCountInString(sel) > ai.ExplainSelectionMaxRunes {
+		s.err(w, http.StatusBadRequest, "選んだ部分が長すぎます")
+		return
+	}
+	if !reading.SelectionLikelyFromPassage(sel, passage) {
+		s.err(w, http.StatusBadRequest, "選んだ部分が本文の中に見つかりません。もういちどなぞってください")
+		return
+	}
+	rt := s.lmFor(UserIDFromCtx(r.Context()))
+	if rt.judgeChat == nil {
+		s.err(w, http.StatusServiceUnavailable, "説明にはチャット用AI（Gemini または Ollama の採点バックエンド）が必要です")
+		return
+	}
+	out, err := ai.ExplainPassageSelection(r.Context(), rt.judgeChat, rt.judgeModel, title, passage, sel)
+	if err != nil {
 		s.err(w, http.StatusBadGateway, "説明の生成に失敗しました: "+err.Error())
 		return
 	}

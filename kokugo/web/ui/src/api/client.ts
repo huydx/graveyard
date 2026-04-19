@@ -29,7 +29,7 @@ export async function api<T = Record<string, unknown>>(path: string, opts: Reque
     ...(opts.body && !(opts.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
     ...opts.headers,
   };
-  const r = await fetch(path, { ...opts, headers });
+  const r = await fetch(path, { ...opts, credentials: "include", headers });
   const text = await r.text();
   const data = await parseJSON(text);
   if (!r.ok) {
@@ -296,4 +296,19 @@ export function summarizeSansuExerciseKotsu(exerciseId: string) {
 
 export function getSansuExerciseKotsu(exerciseId: string) {
   return api<SansuKotsuPagesResponse>(`/api/sansu/exercises/${encodeURIComponent(exerciseId)}/kotsu`);
+}
+
+export function getAuthMe() {
+  return api<{ email: string }>("/api/auth/me");
+}
+
+export function postLogin(email: string, password: string) {
+  return api<{ ok: boolean; email: string }>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function postLogout() {
+  return api<{ ok: boolean }>("/api/auth/logout", { method: "POST", body: "{}" });
 }

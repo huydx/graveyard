@@ -1,4 +1,4 @@
-package api
+package reading
 
 import (
 	"strings"
@@ -23,7 +23,7 @@ func TestPassageSpeedReadVisibleMatchesPlain(t *testing.T) {
 		if err != nil {
 			t.Fatalf("html=%q err=%v", h, err)
 		}
-		want := passagePlainForMatch(h)
+		want := PassagePlainForMatch(h)
 		// Parser path NFC-normalizes chunks; plain strip path may differ in composition.
 		if normString(got) != normString(want) {
 			t.Errorf("visible mismatch html=%q\ngot  %q\nwant %q", h, got, want)
@@ -41,7 +41,7 @@ func TestMergeBunsetsuCutsInsideOneRuby(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Invalid cut between 大 and 阪 (same ruby); merge into one segment.
-	merged, err := mergeBunsetsuCutsAtRuby([]rune(vis), atoms, []string{"大", "阪へ"})
+	merged, err := MergeBunsetsuCutsAtRuby([]rune(vis), atoms, []string{"大", "阪へ"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestAlignBunsetsuReprojectsSpaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	merged, err := mergeBunsetsuCutsAtRuby([]rune(visRunes), atoms, model)
+	merged, err := MergeBunsetsuCutsAtRuby([]rune(visRunes), atoms, model)
 	if err != nil {
 		t.Fatal(err)
 	}

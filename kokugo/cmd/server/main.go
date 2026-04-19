@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"io/fs"
 	"log"
 	"mime"
@@ -24,9 +23,6 @@ func main() {
 	defer st.Close()
 
 	srv := &api.Server{Cfg: cfg, Store: st}
-	if err := srv.ReloadLLM(context.Background()); err != nil {
-		log.Fatalf("ReloadLLM: %v", err)
-	}
 
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
@@ -51,6 +47,7 @@ func main() {
 		"GET /prints",
 		"GET /prints/{path...}",
 		"GET /kokugo",
+		"GET /kokugo/login",
 		"GET /kokugo/{path...}",
 		"GET /sansu",
 		"GET /sansu/{path...}",

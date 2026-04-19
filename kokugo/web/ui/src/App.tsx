@@ -19,31 +19,40 @@ import {
   LegacyKokugoRedirect,
   LegacyResultRedirect,
 } from "./routing/LegacyKokugoRedirect";
+import RequireAuth from "./auth/RequireAuth";
+import HomeGate from "./auth/HomeGate";
+import LoginPage from "./pages/LoginPage";
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<HomePage />} />
+      <Route path="/" element={<HomeGate />}>
+        <Route index element={<HomePage />} />
+      </Route>
 
-      <Route element={<Layout />}>
-        <Route path="kokugo">
-          <Route index element={<Navigate to="prints" replace />} />
-          <Route path="prints" element={<PrintsPage />} />
-          <Route path="prints/new" element={<NewPrintPage />} />
-          <Route path="prints/:assignmentId/scan" element={<ScanPage />} />
-          <Route path="prints/:assignmentId" element={<PrintDetailPage />} />
-          <Route path="exercise/:id" element={<ExercisePage />} />
-          <Route path="result/:id" element={<ResultPage />} />
-          <Route path="remind" element={<RemindPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-          <Route path="progress" element={<ProgressPage />} />
-          <Route path="digests" element={<DigestsPage />} />
-        </Route>
-        <Route path="sansu">
-          <Route index element={<Navigate to="prints" replace />} />
-          <Route path="prints" element={<SansuPrintsPage />} />
-          <Route path="prints/new" element={<SansuNewPrintPage />} />
-          <Route path="prints/:assignmentId/scan" element={<SansuScanPage />} />
+      <Route path="kokugo/login" element={<LoginPage />} />
+
+      <Route element={<RequireAuth />}>
+        <Route element={<Layout />}>
+          <Route path="kokugo">
+            <Route index element={<Navigate to="prints" replace />} />
+            <Route path="prints" element={<PrintsPage />} />
+            <Route path="prints/new" element={<NewPrintPage />} />
+            <Route path="prints/:assignmentId/scan" element={<ScanPage />} />
+            <Route path="prints/:assignmentId" element={<PrintDetailPage />} />
+            <Route path="exercise/:id" element={<ExercisePage />} />
+            <Route path="result/:id" element={<ResultPage />} />
+            <Route path="remind" element={<RemindPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="progress" element={<ProgressPage />} />
+            <Route path="digests" element={<DigestsPage />} />
+          </Route>
+          <Route path="sansu">
+            <Route index element={<Navigate to="prints" replace />} />
+            <Route path="prints" element={<SansuPrintsPage />} />
+            <Route path="prints/new" element={<SansuNewPrintPage />} />
+            <Route path="prints/:assignmentId/scan" element={<SansuScanPage />} />
+          </Route>
         </Route>
       </Route>
 

@@ -12,7 +12,7 @@ import (
 	"github.com/huydx/kokugo/internal/store"
 )
 
-// llmRuntime holds clients rebuilt from env + DB app_settings.
+// llmRuntime holds clients rebuilt from DB app_settings + the tenant user's Gemini key only (no env API key).
 type llmRuntime struct {
 	imageParser ai.ExerciseImageParser
 
@@ -27,26 +27,13 @@ type llmRuntime struct {
 	effJudgeBackend   string
 }
 
-func (s *Server) lm() *llmRuntime {
-	v := s.llm.Load()
-	if v == nil {
-		return &llmRuntime{}
-	}
-	return v
-}
-
-// MergeAppLLM resolves Ollama URL and Google API key.
-// For the API key: a non-empty value stored in the database wins; if the DB value is empty, GOOGLE_API_KEY from the environment is used.
-func MergeAppLLM(cfg config.Config, db store.AppSettings) (ollamaURL, googleKey string) {
-	ollamaURL = strings.TrimSpace(db.OllamaBaseURL)
+// MergeOllamaURL resolves Ollama base URL from DB then config (Gemini key is per-user, not here).
+func MergeOllamaURL(cfg config.Config, db store.AppSettings) string {
+	ollamaURL := strings.TrimSpace(db.OllamaBaseURL)
 	if ollamaURL == "" {
 		ollamaURL = strings.TrimSpace(cfg.OllamaBaseURL)
 	}
-	googleKey = strings.TrimSpace(db.GoogleAPIKey)
-	if googleKey == "" {
-		googleKey = strings.TrimSpace(cfg.GoogleKey)
-	}
-	return ollamaURL, googleKey
+	return ollamaURL
 }
 
 // EffectiveOllamaChatModel: DB ollama_chat_model → OLLAMA_CHAT_MODEL → OLLAMA_MODEL.
@@ -93,20 +80,75 @@ func MergeJudgeBackend(cfg config.Config, db store.AppSettings) string {
 	return cfg.ChatBackendJudge
 }
 
-// ReloadLLM rebuilds worksheet parser and chat stack from environment merged with DB settings.
-func (s *Server) ReloadLLM(ctx context.Context) error {
-	db, err := s.Store.GetAppSettings(ctx)
+func (s *Server) invalidateLLMUser(userID string) {
+	if userID == "" {
+		return
+	}
+	s.llmMu.Lock()
+	defer s.llmMu.Unlock()
+	if s.llmByUser != nil {
+		delete(s.llmByUser, userID)
+	}
+}
+
+// reloadLLMForUser rebuilds and caches the LLM runtime for one tenant (after login or settings change).
+func (s *Server) reloadLLMForUser(ctx context.Context, userID string) error {
+	rt, err := s.buildLLMRuntimeForUser(ctx, userID)
 	if err != nil {
 		return err
 	}
-	ollamaURL, gKey := MergeAppLLM(s.Cfg, db)
+	s.llmMu.Lock()
+	if s.llmByUser == nil {
+		s.llmByUser = make(map[string]*llmRuntime)
+	}
+	s.llmByUser[userID] = rt
+	s.llmMu.Unlock()
+	return nil
+}
+
+func (s *Server) lmFor(userID string) *llmRuntime {
+	if userID == "" {
+		return &llmRuntime{}
+	}
+	s.llmMu.Lock()
+	if s.llmByUser == nil {
+		s.llmByUser = make(map[string]*llmRuntime)
+	}
+	if rt, ok := s.llmByUser[userID]; ok && rt != nil {
+		s.llmMu.Unlock()
+		return rt
+	}
+	s.llmMu.Unlock()
+	if err := s.reloadLLMForUser(context.Background(), userID); err != nil {
+		log.Printf("lmFor user=%s: %v", userID, err)
+		return &llmRuntime{}
+	}
+	s.llmMu.Lock()
+	defer s.llmMu.Unlock()
+	if rt, ok := s.llmByUser[userID]; ok && rt != nil {
+		return rt
+	}
+	return &llmRuntime{}
+}
+
+func (s *Server) buildLLMRuntimeForUser(ctx context.Context, userID string) (*llmRuntime, error) {
+	db, err := s.Store.GetAppSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	u, err := s.Store.GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	gKey := strings.TrimSpace(u.GoogleAPIKey)
+	ollamaURL := MergeOllamaURL(s.Cfg, db)
 	maxTok := int32(s.Cfg.ParseMaxOutputTokens)
 
 	var gem *gemini.Client
 	if gKey != "" {
 		c, err := gemini.New(ctx, gKey, s.Cfg.GeminiModel, maxTok, s.Cfg.GeminiJudgeModel)
 		if err != nil {
-			log.Printf("llm: gemini client: %v", err)
+			log.Printf("llm: gemini client user=%s: %v", userID, err)
 		} else {
 			gem = c
 		}
@@ -123,7 +165,7 @@ func (s *Server) ReloadLLM(ctx context.Context) error {
 	summaryChat, summaryModel, transcribeOK := buildSummaryChat(s.Cfg, gem, ollamaURL, sumB, effOllamaChat)
 	judgeChat, judgeModel := buildJudgeChat(s.Cfg, gem, ollamaURL, judgeB, effOllamaChat)
 
-	rt := &llmRuntime{
+	return &llmRuntime{
 		imageParser:       imageParser,
 		summaryChat:       summaryChat,
 		summaryModel:      summaryModel,
@@ -133,9 +175,7 @@ func (s *Server) ReloadLLM(ctx context.Context) error {
 		effOllamaURL:      ollamaURL,
 		effSummaryBackend: sumB,
 		effJudgeBackend:   judgeB,
-	}
-	s.llm.Store(rt)
-	return nil
+	}, nil
 }
 
 func buildSummaryChat(cfg config.Config, gem *gemini.Client, ollamaBaseURL, backend, ollamaChatModel string) (chat ai.ChatCompleter, chatModel string, transcribeOK bool) {

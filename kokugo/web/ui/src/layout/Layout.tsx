@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { getHealth } from "../api/client";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { getHealth, postLogout } from "../api/client";
 import RubyHtml from "../components/RubyHtml";
 import { paths } from "../lib/paths";
 import * as L from "../lib/uiLabelsRuby";
@@ -8,6 +8,7 @@ import * as L from "../lib/uiLabelsRuby";
 const LS_SIDEBAR = "study-app-sidebar-expanded";
 
 export default function Layout() {
+  const navigate = useNavigate();
   const location = useLocation();
   const [geminiOk, setGeminiOk] = useState(false);
   const [apiReachable, setApiReachable] = useState(true);
@@ -108,6 +109,15 @@ export default function Layout() {
                   <Link to={paths.kokugo.settings} className="sidebar-secondary-link sidebar-secondary-link--parent">
                     <RubyHtml html={L.navParentOnly} />
                   </Link>
+                  <button
+                    type="button"
+                    className="sidebar-secondary-link"
+                    onClick={() => {
+                      void postLogout().finally(() => navigate(paths.kokugo.login));
+                    }}
+                  >
+                    <RubyHtml html={L.navLogout} />
+                  </button>
                 </div>
               </>
             ) : null}
@@ -119,6 +129,15 @@ export default function Layout() {
                 <Link to={paths.kokugo.settings} className="sidebar-secondary-link sidebar-secondary-link--parent">
                   <RubyHtml html={L.navParentOnly} />
                 </Link>
+                <button
+                  type="button"
+                  className="sidebar-secondary-link"
+                  onClick={() => {
+                    void postLogout().finally(() => navigate(paths.kokugo.login));
+                  }}
+                >
+                  <RubyHtml html={L.navLogout} />
+                </button>
               </div>
             ) : null}
           </>

@@ -24,7 +24,7 @@ type WeeklyDigest struct {
 	CompletedAt *time.Time `json:"completedAt,omitempty"`
 }
 
-func (s *Store) ListWeeklyDigestsByTopic(ctx context.Context, topic, status string, limit int) ([]WeeklyDigest, error) {
+func (s *Store) ListWeeklyDigestsByTopic(ctx context.Context, userID, topic, status string, limit int) ([]WeeklyDigest, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -33,9 +33,9 @@ func (s *Store) ListWeeklyDigestsByTopic(ctx context.Context, topic, status stri
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, topic, sub_topic, content, status, created_at, completed_at
 		FROM weekly_digests
-		WHERE topic = ? AND status = ?
+		WHERE user_id = ? AND topic = ? AND status = ?
 		ORDER BY datetime(created_at) ASC
-		LIMIT ?`, topic, status, limit)
+		LIMIT ?`, userID, topic, status, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -57,25 +57,25 @@ func (s *Store) ListWeeklyDigestsByTopic(ctx context.Context, topic, status stri
 	return out, rows.Err()
 }
 
-func (s *Store) CountWeeklyDigestsByTopic(ctx context.Context, topic, status string) (int, error) {
+func (s *Store) CountWeeklyDigestsByTopic(ctx context.Context, userID, topic, status string) (int, error) {
 	topic = strings.TrimSpace(topic)
 	status = strings.TrimSpace(status)
 	var n int
 	err := s.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM weekly_digests WHERE topic = ? AND status = ?`, topic, status).Scan(&n)
+		SELECT COUNT(*) FROM weekly_digests WHERE user_id = ? AND topic = ? AND status = ?`, userID, topic, status).Scan(&n)
 	return n, err
 }
 
-func (s *Store) InsertWeeklyDigest(ctx context.Context, topic, subTopic, content string) (*WeeklyDigest, error) {
+func (s *Store) InsertWeeklyDigest(ctx context.Context, userID, topic, subTopic, content string) (*WeeklyDigest, error) {
 	topic = strings.TrimSpace(topic)
 	subTopic = strings.TrimSpace(subTopic)
 	content = strings.TrimSpace(content)
 	now := time.Now().UTC()
 	id := uuid.NewString()
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO weekly_digests (id, topic, sub_topic, content, status, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		id, topic, subTopic, content, WeeklyDigestStatusStocked, now.Format(time.RFC3339))
+		INSERT INTO weekly_digests (id, user_id, topic, sub_topic, content, status, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, userID, topic, subTopic, content, WeeklyDigestStatusStocked, now.Format(time.RFC3339))
 	if err != nil {
 		return nil, err
 	}
@@ -89,13 +89,13 @@ func (s *Store) InsertWeeklyDigest(ctx context.Context, topic, subTopic, content
 	}, nil
 }
 
-func (s *Store) CompleteWeeklyDigest(ctx context.Context, id string) error {
+func (s *Store) CompleteWeeklyDigest(ctx context.Context, userID, id string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE weekly_digests
 		SET status = ?, completed_at = ?
-		WHERE id = ? AND status = ?`,
-		WeeklyDigestStatusCompleted, now, id, WeeklyDigestStatusStocked)
+		WHERE id = ? AND user_id = ? AND status = ?`,
+		WeeklyDigestStatusCompleted, now, id, userID, WeeklyDigestStatusStocked)
 	if err != nil {
 		return err
 	}
@@ -106,16 +106,16 @@ func (s *Store) CompleteWeeklyDigest(ctx context.Context, id string) error {
 	return nil
 }
 
-func (s *Store) ListWeeklyDigestSubTopics(ctx context.Context, topic string, limit int) ([]string, error) {
+func (s *Store) ListWeeklyDigestSubTopics(ctx context.Context, userID, topic string, limit int) ([]string, error) {
 	if limit <= 0 {
 		limit = 100
 	}
 	topic = strings.TrimSpace(topic)
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT sub_topic FROM weekly_digests
-		WHERE topic = ?
+		WHERE user_id = ? AND topic = ?
 		ORDER BY datetime(created_at) DESC
-		LIMIT ?`, topic, limit)
+		LIMIT ?`, userID, topic, limit)
 	if err != nil {
 		return nil, err
 	}

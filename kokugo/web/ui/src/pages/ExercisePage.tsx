@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   checkQuestionAnswer,
-  explainPassageSelection,
   generateSpeedReadSegments,
   getExercise,
   getQuestionSolution,
   submitAnswers,
   transcribeAudio,
 } from "../api/client";
+import { explainReadingSelection } from "../reading/api";
 import {
   createJaSpeechRecognition,
   shouldUseBrowserSpeechRecognition,
@@ -366,11 +366,15 @@ export default function ExercisePage() {
   const scorable = q && needsCheck(q);
 
   const runExplain = useCallback(async () => {
-    if (!id || !explainSelection.trim()) return;
+    if (!passage.trim() || !explainSelection.trim()) return;
     setExplainBusy(true);
     setExplainErr("");
     try {
-      const res = await explainPassageSelection(id, explainSelection);
+      const res = await explainReadingSelection({
+        title,
+        passage,
+        selection: explainSelection,
+      });
       setExplainResult(res);
       window.getSelection()?.removeAllRanges();
       clearExplainHighlight();
@@ -380,7 +384,7 @@ export default function ExercisePage() {
     } finally {
       setExplainBusy(false);
     }
-  }, [id, explainSelection, clearExplainHighlight]);
+  }, [title, passage, explainSelection, clearExplainHighlight]);
 
   if (loadErr) {
     return (

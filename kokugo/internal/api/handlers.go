@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -27,7 +27,9 @@ const maxExercisePages = 12
 type Server struct {
 	Cfg   config.Config
 	Store *store.Store
-	llm   atomic.Pointer[llmRuntime]
+
+	llmMu     sync.Mutex
+	llmByUser map[string]*llmRuntime
 }
 
 func (s *Server) json(w http.ResponseWriter, status int, v any) {
@@ -41,7 +43,7 @@ func (s *Server) err(w http.ResponseWriter, status int, msg string) {
 }
 
 func (s *Server) Health(w http.ResponseWriter, r *http.Request) {
-	rt := s.lm()
+	rt := s.lmFor(s.optionalUserID(r))
 	s.json(w, http.StatusOK, map[string]any{
 		"geminiConnected":    rt.imageParser != nil,
 		"speechTranscribeOK": rt.transcribeOK && rt.summaryChat != nil,
@@ -58,9 +60,9 @@ func (s *Server) TranscribeAudio(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusMethodNotAllowed, "POST のみ")
 		return
 	}
-	rt := s.lm()
+	rt := s.lmFor(UserIDFromCtx(r.Context()))
 	if rt.summaryChat == nil || !rt.transcribeOK {
-		s.err(w, http.StatusServiceUnavailable, "音声の文字おこしは要約まわりを Gemini にする必要があります（KOKUGO_CHAT_BACKEND_SUMMARY=gemini と GOOGLE_API_KEY）")
+		s.err(w, http.StatusServiceUnavailable, "音声の文字おこしは要約まわりを Gemini にする必要があります（せっていで「まとめ」を gemini にし、このアカウント用の Gemini API キーを入れてください）")
 		return
 	}
 	_ = r.ParseMultipartForm(16 << 20)
@@ -107,7 +109,7 @@ func (s *Server) SummarizeSansuKotsu(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusMethodNotAllowed, "POST のみ")
 		return
 	}
-	rt := s.lm()
+	rt := s.lmFor(UserIDFromCtx(r.Context()))
 	if rt.summaryChat == nil || rt.effSummaryBackend != "gemini" {
 		s.err(w, http.StatusServiceUnavailable, "この機能は Gemini でのみ使えます（設定で「まとめ」を gemini にしてください）")
 		return
@@ -146,7 +148,7 @@ func (s *Server) SummarizeSansuExerciseKotsu(w http.ResponseWriter, r *http.Requ
 		s.err(w, http.StatusMethodNotAllowed, "POST のみ")
 		return
 	}
-	rt := s.lm()
+	rt := s.lmFor(UserIDFromCtx(r.Context()))
 	if rt.summaryChat == nil || rt.effSummaryBackend != "gemini" {
 		s.err(w, http.StatusServiceUnavailable, "この機能は Gemini でのみ使えます（設定で「まとめ」を gemini にしてください）")
 		return
@@ -156,7 +158,7 @@ func (s *Server) SummarizeSansuExerciseKotsu(w http.ResponseWriter, r *http.Requ
 		s.err(w, http.StatusBadRequest, "演習IDが不正です")
 		return
 	}
-	ex, _, err := s.Store.GetExercise(r.Context(), id)
+	ex, _, err := s.Store.GetExercise(r.Context(), UserIDFromCtx(r.Context()), id)
 	if err != nil {
 		s.err(w, http.StatusNotFound, "見つかりません")
 		return
@@ -190,7 +192,7 @@ func (s *Server) SummarizeSansuExerciseKotsu(w http.ResponseWriter, r *http.Requ
 	}
 	raw, mErr := ai.MarshalKotsuPagesJSON(pages)
 	if mErr == nil {
-		_ = s.Store.SaveSummary(r.Context(), id, raw)
+		_ = s.Store.SaveSummary(r.Context(), UserIDFromCtx(r.Context()), id, raw)
 	}
 	s.json(w, http.StatusOK, map[string]any{"pages": pages})
 }
@@ -205,9 +207,13 @@ func (s *Server) GetSansuExerciseKotsu(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusBadRequest, "演習IDが不正です")
 		return
 	}
-	j, err := s.Store.GetSummary(r.Context(), id)
-	if err != nil || strings.TrimSpace(j) == "" {
+	j, err := s.Store.GetSummary(r.Context(), UserIDFromCtx(r.Context()), id)
+	if errors.Is(err, sql.ErrNoRows) || strings.TrimSpace(j) == "" {
 		s.err(w, http.StatusNotFound, "まだありません")
+		return
+	}
+	if err != nil {
+		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	pages, err := ai.ParseKotsuPagesFromStorageJSON(j)
@@ -249,7 +255,7 @@ func (s *Server) UploadScan(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusInternalServerError, "画像の保存に失敗しました")
 		return
 	}
-	ex, err := s.Store.CreateExerciseDraft(r.Context(), path)
+	ex, err := s.Store.CreateExerciseDraft(r.Context(), UserIDFromCtx(r.Context()), path)
 	if err != nil {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
@@ -292,12 +298,12 @@ func (s *Server) createPrintWithSubject(w http.ResponseWriter, r *http.Request, 
 		s.err(w, http.StatusBadRequest, "タイトルは200文字以内にしてください")
 		return
 	}
-	ex, err := s.Store.CreateEmptyPrintDraftForSubject(r.Context(), subject)
+	ex, err := s.Store.CreateEmptyPrintDraftForSubject(r.Context(), UserIDFromCtx(r.Context()), subject)
 	if err != nil {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := s.Store.UpdateAssignmentTitle(r.Context(), ex.AssignmentID, title); err != nil {
+	if err := s.Store.UpdateAssignmentTitle(r.Context(), UserIDFromCtx(r.Context()), ex.AssignmentID, title); err != nil {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -326,7 +332,7 @@ func (s *Server) getPrintWithSubject(w http.ResponseWriter, r *http.Request, sub
 		s.err(w, http.StatusBadRequest, "プリントIDが不正です")
 		return
 	}
-	g, err := s.Store.GetAssignmentGroup(r.Context(), aid)
+	g, err := s.Store.GetAssignmentGroup(r.Context(), UserIDFromCtx(r.Context()), aid)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			s.err(w, http.StatusNotFound, "見つかりません")
@@ -335,7 +341,7 @@ func (s *Server) getPrintWithSubject(w http.ResponseWriter, r *http.Request, sub
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	as, err := s.Store.AssignmentSubject(r.Context(), aid)
+	as, err := s.Store.AssignmentSubject(r.Context(), UserIDFromCtx(r.Context()), aid)
 	if err != nil || as != subject {
 		s.err(w, http.StatusNotFound, "見つかりません")
 		return
@@ -377,7 +383,7 @@ func (s *Server) PatchPrint(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusBadRequest, "タイトルは200文字以内にしてください")
 		return
 	}
-	if err := s.Store.UpdateAssignmentTitle(r.Context(), aid, title); err != nil {
+	if err := s.Store.UpdateAssignmentTitle(r.Context(), UserIDFromCtx(r.Context()), aid, title); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			s.err(w, http.StatusNotFound, "見つかりません")
 			return
@@ -407,7 +413,7 @@ func (s *Server) ensureScanDraftWithSubject(w http.ResponseWriter, r *http.Reque
 		s.err(w, http.StatusBadRequest, "プリントIDが不正です")
 		return
 	}
-	g, err := s.Store.GetAssignmentGroup(r.Context(), aid)
+	g, err := s.Store.GetAssignmentGroup(r.Context(), UserIDFromCtx(r.Context()), aid)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			s.err(w, http.StatusNotFound, "見つかりません")
@@ -416,7 +422,7 @@ func (s *Server) ensureScanDraftWithSubject(w http.ResponseWriter, r *http.Reque
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	as, err := s.Store.AssignmentSubject(r.Context(), aid)
+	as, err := s.Store.AssignmentSubject(r.Context(), UserIDFromCtx(r.Context()), aid)
 	if err != nil || as != subject {
 		s.err(w, http.StatusNotFound, "見つかりません")
 		return
@@ -430,7 +436,7 @@ func (s *Server) ensureScanDraftWithSubject(w http.ResponseWriter, r *http.Reque
 		s.json(w, http.StatusOK, map[string]any{"exerciseId": last.ID})
 		return
 	}
-	ex, err := s.Store.AppendDraftExerciseToAssignment(r.Context(), aid)
+	ex, err := s.Store.AppendDraftExerciseToAssignment(r.Context(), UserIDFromCtx(r.Context()), aid)
 	if err != nil {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
@@ -447,9 +453,9 @@ func (s *Server) ParseExercise(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusMethodNotAllowed, "POST のみ")
 		return
 	}
-	rt := s.lm()
+	rt := s.lmFor(UserIDFromCtx(r.Context()))
 	if rt.imageParser == nil {
-		s.err(w, http.StatusServiceUnavailable, "画像の解析ができません（Gemini API キーを GOOGLE_API_KEY またはせっていで指定してください）")
+		s.err(w, http.StatusServiceUnavailable, "画像の解析ができません（せっていでこのアカウント用の Gemini API キーを指定してください）")
 		return
 	}
 	id := r.PathValue("id")
@@ -457,7 +463,7 @@ func (s *Server) ParseExercise(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusBadRequest, "演習IDが不正です")
 		return
 	}
-	ex, _, err := s.Store.GetExercise(r.Context(), id)
+	ex, _, err := s.Store.GetExercise(r.Context(), UserIDFromCtx(r.Context()), id)
 	if err != nil {
 		s.err(w, http.StatusNotFound, "見つかりません")
 		return
@@ -466,7 +472,7 @@ func (s *Server) ParseExercise(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusConflict, "下書きのときだけよみとれます")
 		return
 	}
-	if err := s.Store.EnsureAssignment(r.Context(), id); err != nil {
+	if err := s.Store.EnsureAssignment(r.Context(), UserIDFromCtx(r.Context()), id); err != nil {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -523,16 +529,16 @@ func (s *Server) ParseExercise(w http.ResponseWriter, r *http.Request) {
 			Title: pe.Title, Passage: pe.Passage, Questions: qs,
 		})
 	}
-	if err := s.Store.SyncAssignmentFromParsed(r.Context(), id, blocks); err != nil {
+	if err := s.Store.SyncAssignmentFromParsed(r.Context(), UserIDFromCtx(r.Context()), id, blocks); err != nil {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	exAfter, _, err := s.Store.GetExercise(r.Context(), id)
+	exAfter, _, err := s.Store.GetExercise(r.Context(), UserIDFromCtx(r.Context()), id)
 	if err != nil {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	sibs, _ := s.Store.ListExercisesInAssignment(r.Context(), exAfter.AssignmentID)
+	sibs, _ := s.Store.ListExercisesInAssignment(r.Context(), UserIDFromCtx(r.Context()), exAfter.AssignmentID)
 	var exIDs []string
 	primaryOut := ""
 	for _, e := range sibs {
@@ -588,7 +594,7 @@ func (s *Server) serveExerciseImageAt(w http.ResponseWriter, r *http.Request, id
 		s.err(w, http.StatusBadRequest, "演習IDが不正です")
 		return
 	}
-	ex, _, err := s.Store.GetExercise(r.Context(), id)
+	ex, _, err := s.Store.GetExercise(r.Context(), UserIDFromCtx(r.Context()), id)
 	if err != nil {
 		s.err(w, http.StatusNotFound, "見つかりません")
 		return
@@ -618,7 +624,7 @@ func (s *Server) AddExercisePage(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusBadRequest, "演習IDが不正です")
 		return
 	}
-	ex, _, err := s.Store.GetExercise(r.Context(), id)
+	ex, _, err := s.Store.GetExercise(r.Context(), UserIDFromCtx(r.Context()), id)
 	if err != nil {
 		s.err(w, http.StatusNotFound, "見つかりません")
 		return
@@ -661,12 +667,12 @@ func (s *Server) AddExercisePage(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusInternalServerError, "画像の保存に失敗しました")
 		return
 	}
-	if err := s.Store.AddExercisePage(r.Context(), id, path); err != nil {
+	if err := s.Store.AddExercisePage(r.Context(), UserIDFromCtx(r.Context()), id, path); err != nil {
 		_ = os.Remove(path)
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	ex2, _, err := s.Store.GetExercise(r.Context(), id)
+	ex2, _, err := s.Store.GetExercise(r.Context(), UserIDFromCtx(r.Context()), id)
 	if err != nil {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
@@ -690,7 +696,7 @@ func (s *Server) DeleteExercisePage(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusBadRequest, "ページ番号が不正です")
 		return
 	}
-	res, err := s.Store.RemoveExercisePageAt(r.Context(), id, idx)
+	res, err := s.Store.RemoveExercisePageAt(r.Context(), UserIDFromCtx(r.Context()), id, idx)
 	if errors.Is(err, sql.ErrNoRows) {
 		s.err(w, http.StatusNotFound, "見つかりません")
 		return
@@ -727,7 +733,7 @@ func (s *Server) DeleteExercise(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusBadRequest, "演習IDが不正です")
 		return
 	}
-	paths, err := s.Store.DeleteExercise(r.Context(), id)
+	paths, err := s.Store.DeleteExercise(r.Context(), UserIDFromCtx(r.Context()), id)
 	if errors.Is(err, sql.ErrNoRows) {
 		s.err(w, http.StatusNotFound, "見つかりません")
 		return
@@ -748,7 +754,7 @@ func (s *Server) GetExercise(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusBadRequest, "演習IDが不正です")
 		return
 	}
-	ex, qs, err := s.Store.GetExercise(r.Context(), id)
+	ex, qs, err := s.Store.GetExercise(r.Context(), UserIDFromCtx(r.Context()), id)
 	if err != nil {
 		s.err(w, http.StatusNotFound, "見つかりません")
 		return
@@ -763,7 +769,7 @@ func (s *Server) GetExercise(w http.ResponseWriter, r *http.Request) {
 	}
 	out := map[string]any{"exercise": ex, "questions": pub}
 	if ex.AssignmentID != "" {
-		sibs, err := s.Store.ListExercisesInAssignment(r.Context(), ex.AssignmentID)
+		sibs, err := s.Store.ListExercisesInAssignment(r.Context(), UserIDFromCtx(r.Context()), ex.AssignmentID)
 		if err == nil && len(sibs) > 0 {
 			rows := make([]map[string]any, 0, len(sibs))
 			for _, e := range sibs {
@@ -803,12 +809,12 @@ func (s *Server) SubmitAnswers(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusBadRequest, "JSONが不正です")
 		return
 	}
-	ex, qs, err := s.Store.GetExercise(r.Context(), id)
+	ex, qs, err := s.Store.GetExercise(r.Context(), UserIDFromCtx(r.Context()), id)
 	if err != nil {
 		s.err(w, http.StatusNotFound, "見つかりません")
 		return
 	}
-	rt := s.lm()
+	rt := s.lmFor(UserIDFromCtx(r.Context()))
 	var merged []ai.AnswerJudgment
 	if rt.judgeChat != nil {
 		items := buildAnswerJudgeItemsLLM(body.Answers, qs)
@@ -833,7 +839,7 @@ func (s *Server) SubmitAnswers(w http.ResponseWriter, r *http.Request) {
 	if len(qs) > 0 {
 		pct = (correct * 100) / len(qs)
 	}
-	if err := s.Store.SaveAnswersAndComplete(r.Context(), id, body.Answers, pct); err != nil {
+	if err := s.Store.SaveAnswersAndComplete(r.Context(), UserIDFromCtx(r.Context()), id, body.Answers, pct); err != nil {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -865,7 +871,7 @@ func (s *Server) CheckQuestion(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusBadRequest, "JSONが不正です")
 		return
 	}
-	ex, qs, err := s.Store.GetExercise(r.Context(), eid)
+	ex, qs, err := s.Store.GetExercise(r.Context(), UserIDFromCtx(r.Context()), eid)
 	if err != nil {
 		s.err(w, http.StatusNotFound, "見つかりません")
 		return
@@ -886,7 +892,7 @@ func (s *Server) CheckQuestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ua := strings.TrimSpace(body.Answer)
-	rt := s.lm()
+	rt := s.lmFor(UserIDFromCtx(r.Context()))
 	var j ai.AnswerJudgment
 	if rt.judgeChat != nil && isVoiceQuestion(q) {
 		items := []ai.AnswerJudgeItem{{
@@ -934,7 +940,7 @@ func (s *Server) GetQuestionSolution(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusBadRequest, "IDが不正です")
 		return
 	}
-	_, qs, err := s.Store.GetExercise(r.Context(), eid)
+	_, qs, err := s.Store.GetExercise(r.Context(), UserIDFromCtx(r.Context()), eid)
 	if err != nil {
 		s.err(w, http.StatusNotFound, "見つかりません")
 		return
@@ -1162,13 +1168,13 @@ func vocabItemsFromPrintSummary(sum *ai.PrintLearningSummary) []store.VocabItem 
 	return out
 }
 
-func (s *Server) buildPrintSummaryPayload(ctx context.Context, g *store.AssignmentGroup) ([]byte, error) {
+func (s *Server) buildPrintSummaryPayload(ctx context.Context, userID string, g *store.AssignmentGroup) ([]byte, error) {
 	var exercises []map[string]any
 	for _, e := range g.Exercises {
 		if e.Status != "parsed" && e.Status != "completed" {
 			continue
 		}
-		ex, qs, err := s.Store.GetExercise(ctx, e.ID)
+		ex, qs, err := s.Store.GetExercise(ctx, userID, e.ID)
 		if err != nil {
 			continue
 		}
@@ -1209,7 +1215,7 @@ func (s *Server) GeneratePrintSummary(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusMethodNotAllowed, "POST のみ")
 		return
 	}
-	rt := s.lm()
+	rt := s.lmFor(UserIDFromCtx(r.Context()))
 	if rt.summaryChat == nil {
 		s.err(w, http.StatusServiceUnavailable, "まとめの生成には要約用チャット（Gemini または Ollama）が必要です")
 		return
@@ -1219,7 +1225,7 @@ func (s *Server) GeneratePrintSummary(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusBadRequest, "プリントIDが不正です")
 		return
 	}
-	g, err := s.Store.GetAssignmentGroup(r.Context(), aid)
+	g, err := s.Store.GetAssignmentGroup(r.Context(), UserIDFromCtx(r.Context()), aid)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			s.err(w, http.StatusNotFound, "見つかりません")
@@ -1228,7 +1234,7 @@ func (s *Server) GeneratePrintSummary(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	payload, err := s.buildPrintSummaryPayload(r.Context(), g)
+	payload, err := s.buildPrintSummaryPayload(r.Context(), UserIDFromCtx(r.Context()), g)
 	if err != nil {
 		s.err(w, http.StatusBadRequest, "よみとりずみのもんだいがないとまとめられません")
 		return
@@ -1244,14 +1250,14 @@ func (s *Server) GeneratePrintSummary(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusInternalServerError, "encode")
 		return
 	}
-	if err := s.Store.SavePrintSummary(r.Context(), aid, string(raw)); err != nil {
+	if err := s.Store.SavePrintSummary(r.Context(), UserIDFromCtx(r.Context()), aid, string(raw)); err != nil {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if len(g.Exercises) > 0 {
 		anchor := g.Exercises[0].ID
 		items := vocabItemsFromPrintSummary(sum)
-		if err := s.Store.ReplaceVocabCardsForAssignment(r.Context(), aid, anchor, items); err != nil {
+		if err := s.Store.ReplaceVocabCardsForAssignment(r.Context(), UserIDFromCtx(r.Context()), aid, anchor, items); err != nil {
 			log.Printf("print_summary vocab: %v", err)
 		}
 	}
@@ -1268,9 +1274,13 @@ func (s *Server) GetPrintSummary(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusBadRequest, "プリントIDが不正です")
 		return
 	}
-	j, err := s.Store.GetPrintSummary(r.Context(), aid)
-	if err != nil || j == "" {
+	j, err := s.Store.GetPrintSummary(r.Context(), UserIDFromCtx(r.Context()), aid)
+	if errors.Is(err, sql.ErrNoRows) || j == "" {
 		s.err(w, http.StatusNotFound, "まだありません")
+		return
+	}
+	if err != nil {
+		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	var sum ai.PrintLearningSummary
@@ -1290,7 +1300,7 @@ func (s *Server) GetPrintSummary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) History(w http.ResponseWriter, r *http.Request) {
-	groups, err := s.Store.ListAssignmentsForHistory(r.Context(), 80)
+	groups, err := s.Store.ListAssignmentsForHistory(r.Context(), UserIDFromCtx(r.Context()), 80)
 	if err != nil {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1299,7 +1309,7 @@ func (s *Server) History(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) SansuHistory(w http.ResponseWriter, r *http.Request) {
-	groups, err := s.Store.ListAssignmentsForHistoryBySubject(r.Context(), 80, "sansu")
+	groups, err := s.Store.ListAssignmentsForHistoryBySubject(r.Context(), UserIDFromCtx(r.Context()), 80, "sansu")
 	if err != nil {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1308,13 +1318,13 @@ func (s *Server) SansuHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) MonthlyReminder(w http.ResponseWriter, r *http.Request) {
-	cards, err := s.Store.MonthlyVocab(r.Context(), 40)
+	cards, err := s.Store.MonthlyVocab(r.Context(), UserIDFromCtx(r.Context()), 40)
 	if err != nil {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if len(cards) == 0 {
-		cards, _ = s.Store.AllVocabForReview(r.Context(), 30)
+		cards, _ = s.Store.AllVocabForReview(r.Context(), UserIDFromCtx(r.Context()), 30)
 	}
 	s.json(w, http.StatusOK, map[string]any{"cards": cards})
 }
@@ -1329,7 +1339,7 @@ func (s *Server) ReviewCard(w http.ResponseWriter, r *http.Request) {
 		s.err(w, http.StatusBadRequest, "IDが必要です")
 		return
 	}
-	if err := s.Store.TouchVocabReview(r.Context(), id); err != nil {
+	if err := s.Store.TouchVocabReview(r.Context(), UserIDFromCtx(r.Context()), id); err != nil {
 		s.err(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -1338,44 +1348,52 @@ func (s *Server) ReviewCard(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/health", s.Health)
-	mux.HandleFunc("GET /api/settings", s.GetSettings)
-	mux.HandleFunc("GET /api/settings/ollama-check", s.GetOllamaCheck)
-	mux.HandleFunc("PUT /api/settings", s.PutSettings)
-	mux.HandleFunc("POST /api/settings", s.PutSettings)
-	mux.HandleFunc("POST /api/transcribe", s.TranscribeAudio)
-	mux.HandleFunc("POST /api/sansu/kotsu", s.SummarizeSansuKotsu)
-	mux.HandleFunc("POST /api/sansu/exercises/{id}/kotsu", s.SummarizeSansuExerciseKotsu)
-	mux.HandleFunc("GET /api/sansu/exercises/{id}/kotsu", s.GetSansuExerciseKotsu)
-	mux.HandleFunc("POST /api/upload", s.UploadScan)
-	mux.HandleFunc("GET /api/prints/{id}", s.GetPrint)
-	mux.HandleFunc("PATCH /api/prints/{id}", s.PatchPrint)
-	mux.HandleFunc("POST /api/prints/{id}/ensure-scan-draft", s.EnsureScanDraft)
-	mux.HandleFunc("POST /api/sansu/prints/{id}/ensure-scan-draft", s.EnsureSansuScanDraft)
-	mux.HandleFunc("POST /api/prints", s.CreatePrint)
-	mux.HandleFunc("POST /api/sansu/prints", s.CreateSansuPrint)
-	mux.HandleFunc("GET /api/sansu/prints/{id}", s.GetSansuPrint)
-	mux.HandleFunc("GET /api/sansu/history", s.SansuHistory)
-	mux.HandleFunc("POST /api/exercises/{id}/pages", s.AddExercisePage)
-	mux.HandleFunc("DELETE /api/exercises/{id}/pages/{pageIndex}", s.DeleteExercisePage)
-	mux.HandleFunc("POST /api/exercises/{id}/parse", s.ParseExercise)
-	mux.HandleFunc("GET /api/exercises/{id}/image/{pageIndex}", s.ExerciseImagePage)
-	mux.HandleFunc("GET /api/exercises/{id}/image", s.ExerciseImage)
-	mux.HandleFunc("DELETE /api/exercises/{id}", s.DeleteExercise)
-	mux.HandleFunc("GET /api/exercises/{id}", s.GetExercise)
-	mux.HandleFunc("POST /api/exercises/{id}/submit", s.SubmitAnswers)
-	mux.HandleFunc("POST /api/exercises/{id}/questions/{questionId}/check", s.CheckQuestion)
-	mux.HandleFunc("GET /api/exercises/{id}/questions/{questionId}/solution", s.GetQuestionSolution)
-	mux.HandleFunc("POST /api/exercises/{id}/explain-selection", s.ExplainPassageSelection)
-	mux.HandleFunc("GET /api/exercises/{id}/speed-read-segments", s.SpeedReadSegments)
-	mux.HandleFunc("POST /api/exercises/{id}/speed-read-segments", s.SpeedReadSegments)
-	mux.HandleFunc("POST /api/prints/{id}/summary", s.GeneratePrintSummary)
-	mux.HandleFunc("GET /api/prints/{id}/summary", s.GetPrintSummary)
-	mux.HandleFunc("GET /api/history", s.History)
-	mux.HandleFunc("GET /api/reminders/monthly", s.MonthlyReminder)
-	mux.HandleFunc("POST /api/vocab/{id}/review", s.ReviewCard)
-	mux.HandleFunc("GET /api/digests/topic", s.GetWeeklyDigestTopic)
-	mux.HandleFunc("PUT /api/digests/topic", s.PutWeeklyDigestTopic)
-	mux.HandleFunc("POST /api/digests/topic", s.PutWeeklyDigestTopic)
-	mux.HandleFunc("GET /api/digests/weekly", s.ListWeeklyDigests)
-	mux.HandleFunc("POST /api/digests/weekly/{id}/complete", s.CompleteWeeklyDigest)
+	mux.HandleFunc("POST /api/auth/login", s.Login)
+	mux.HandleFunc("POST /api/auth/logout", s.Logout)
+	mux.HandleFunc("GET /api/auth/me", s.withAuth(s.AuthMe))
+
+	a := s.withAuth
+	mux.HandleFunc("GET /api/settings", a(s.GetSettings))
+	mux.HandleFunc("GET /api/settings/ollama-check", a(s.GetOllamaCheck))
+	mux.HandleFunc("PUT /api/settings", a(s.PutSettings))
+	mux.HandleFunc("POST /api/settings", a(s.PutSettings))
+	mux.HandleFunc("POST /api/transcribe", a(s.TranscribeAudio))
+	mux.HandleFunc("POST /api/sansu/kotsu", a(s.SummarizeSansuKotsu))
+	mux.HandleFunc("POST /api/sansu/exercises/{id}/kotsu", a(s.SummarizeSansuExerciseKotsu))
+	mux.HandleFunc("GET /api/sansu/exercises/{id}/kotsu", a(s.GetSansuExerciseKotsu))
+	mux.HandleFunc("POST /api/upload", a(s.UploadScan))
+	mux.HandleFunc("GET /api/prints/{id}", a(s.GetPrint))
+	mux.HandleFunc("PATCH /api/prints/{id}", a(s.PatchPrint))
+	mux.HandleFunc("POST /api/prints/{id}/ensure-scan-draft", a(s.EnsureScanDraft))
+	mux.HandleFunc("POST /api/sansu/prints/{id}/ensure-scan-draft", a(s.EnsureSansuScanDraft))
+	mux.HandleFunc("POST /api/prints", a(s.CreatePrint))
+	mux.HandleFunc("POST /api/sansu/prints", a(s.CreateSansuPrint))
+	mux.HandleFunc("GET /api/sansu/prints/{id}", a(s.GetSansuPrint))
+	mux.HandleFunc("GET /api/sansu/history", a(s.SansuHistory))
+	mux.HandleFunc("POST /api/exercises/{id}/pages", a(s.AddExercisePage))
+	mux.HandleFunc("DELETE /api/exercises/{id}/pages/{pageIndex}", a(s.DeleteExercisePage))
+	mux.HandleFunc("POST /api/exercises/{id}/parse", a(s.ParseExercise))
+	mux.HandleFunc("GET /api/exercises/{id}/image/{pageIndex}", a(s.ExerciseImagePage))
+	mux.HandleFunc("GET /api/exercises/{id}/image", a(s.ExerciseImage))
+	mux.HandleFunc("DELETE /api/exercises/{id}", a(s.DeleteExercise))
+	mux.HandleFunc("GET /api/exercises/{id}", a(s.GetExercise))
+	mux.HandleFunc("POST /api/exercises/{id}/submit", a(s.SubmitAnswers))
+	mux.HandleFunc("POST /api/exercises/{id}/questions/{questionId}/check", a(s.CheckQuestion))
+	mux.HandleFunc("GET /api/exercises/{id}/questions/{questionId}/solution", a(s.GetQuestionSolution))
+	mux.HandleFunc("POST /api/exercises/{id}/explain-selection", a(s.ExplainPassageSelection))
+	mux.HandleFunc("GET /api/exercises/{id}/speed-read-segments", a(s.SpeedReadSegments))
+	mux.HandleFunc("POST /api/exercises/{id}/speed-read-segments", a(s.SpeedReadSegments))
+	mux.HandleFunc("POST /api/reading/explain-selection", a(s.ExplainReadingSelection))
+	mux.HandleFunc("POST /api/reading/speed-read-segments", a(s.ReadingSpeedReadSegments))
+	mux.HandleFunc("POST /api/reading/materialize", a(s.ReadingMaterialize))
+	mux.HandleFunc("POST /api/prints/{id}/summary", a(s.GeneratePrintSummary))
+	mux.HandleFunc("GET /api/prints/{id}/summary", a(s.GetPrintSummary))
+	mux.HandleFunc("GET /api/history", a(s.History))
+	mux.HandleFunc("GET /api/reminders/monthly", a(s.MonthlyReminder))
+	mux.HandleFunc("POST /api/vocab/{id}/review", a(s.ReviewCard))
+	mux.HandleFunc("GET /api/digests/topic", a(s.GetWeeklyDigestTopic))
+	mux.HandleFunc("PUT /api/digests/topic", a(s.PutWeeklyDigestTopic))
+	mux.HandleFunc("POST /api/digests/topic", a(s.PutWeeklyDigestTopic))
+	mux.HandleFunc("GET /api/digests/weekly", a(s.ListWeeklyDigests))
+	mux.HandleFunc("POST /api/digests/weekly/{id}/complete", a(s.CompleteWeeklyDigest))
 }

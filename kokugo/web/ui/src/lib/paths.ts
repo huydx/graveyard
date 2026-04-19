@@ -12,6 +12,7 @@ export const paths = {
     scan: (id: string) => `${SANSU_BASE}/prints/${encodeURIComponent(id)}/scan`,
   },
   kokugo: {
+    login: `${KOKUGO_BASE}/login`,
     prints: `${KOKUGO_BASE}/prints`,
     printsNew: `${KOKUGO_BASE}/prints/new`,
     print: (id: string) => `${KOKUGO_BASE}/prints/${encodeURIComponent(id)}`,

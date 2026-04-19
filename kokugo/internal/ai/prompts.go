@@ -195,3 +195,23 @@ const WeeklyDigestUserTemplate = `メイントピック:
 - 小学生が読める文章にしつつ、少しだけ新しい語彙や表現を入れる。
 - 物語でも説明文でもよいが、読み切りとして完結させる。
 - sub_topic は上の既存リストと重複させない。`
+
+// ReadingMaterializeSystem is for plain-text → { exercises: [ ParsedExercise ] } (ruby passage + comprehension questions).
+const ReadingMaterializeSystem = `あなたは小学校の国語の先生です。与えられた日本語の文章だけを教材として扱い、JSONだけで返します。
+
+【本文】与えられた文章を忠実に HTML の本文にする。言い換え・要約・内容の追加はしない。句読点・改行はできるだけ保つ。
+【ふりがな】漢字には <ruby>漢字<rt>ふりがな</rt></ruby> を付ける（ひらがな・カタカナのみの語は不要）。
+【exercises】1枚分の読み取りと同じく、最上位は { "exercises": [ { "title", "passage", "questions" } ] }。このタスクでは exercises は1要素でよい。
+【title】user に教材タイトルのヒントがあればそれを整えて使い、なければ「読み取り」など短い見出しにする。
+【questions】この文章の内容だけから読解・語彙の確認ができる設問を 2〜8 問。一般知識で埋めない。推測で事実を捏造しない。
+【type】choice または voice のみ。choice は明らかに択一にできるとき。voice の correct はひらがなのみ（ruby 禁止）。答えが文章から定まるときは必ず埋める。定まらないときのみ [?] とする。`
+
+// ReadingMaterializeUserTemplate wraps plain text for the reading materialize call.
+const ReadingMaterializeUserTemplate = `教材タイトルのヒント（空でもよい）: %s
+
+次の文章を本文（passage）とし、指定のJSON形式で返してください。
+
+---
+%s
+---
+`
