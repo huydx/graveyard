@@ -1,0 +1,54 @@
+# Environment & secrets
+.env
+credentials.json
+token.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+*.so
+.Python
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Testing & coverage
+htmlcov/
+.coverage
+.coverage.*
+.pytest_cache/
+.tox/
+.nox/
+
+# Type checkers & linters
+.mypy_cache/
+.ruff_cache/
+
+# IDE & editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.vim/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
