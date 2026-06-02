@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup 2 — Clean Modern</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+    background: #e8edf2;
+    display: flex; justify-content: center; align-items: center;
+    min-height: 100vh; padding: 20px;
+  }
+  .wrapper {
+    width: 900px; max-width: 100%; height: 640px;
+    display: flex; border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+  }
+
+  /* ── Left Pane ── */
+  .left-pane {
+    width: 80px; min-width: 80px;
+    background: #ffffff;
+    border-right: 1px solid #e2e8f0;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 20px 0 16px; gap: 18px;
+  }
+  .input-btn {
+    width: 52px; height: 52px; border-radius: 14px;
+    border: 1.5px solid #e2e8f0; background: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; cursor: pointer; transition: 0.15s;
+    color: #64748b;
+  }
+  .input-btn.active { background: #3b82f6; border-color: #3b82f6; color: #fff; box-shadow: 0 2px 12px #3b82f633; }
+  .input-btn:hover { border-color: #3b82f6; color: #3b82f6; }
+  .input-btn.active:hover { color: #fff; }
+  .spacer { flex: 1; }
+
+  /* ── Right Pane ── */
+  .right-pane {
+    flex: 1; background: #f8fafc;
+    display: flex; flex-direction: column;
+    position: relative;
+  }
+  .chat-area {
+    flex: 1; overflow-y: auto;
+    padding: 20px 24px; display: flex; flex-direction: column; gap: 12px;
+  }
+
+  /* ── Bubbles ── */
+  .bubble {
+    max-width: 75%; padding: 12px 16px; border-radius: 16px;
+    font-size: 16px; line-height: 1.55;
+    animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .bubble.ai {
+    align-self: flex-start; background: #fff; color: #1e293b;
+    border: 1px solid #e2e8f0;
+    border-bottom-left-radius: 4px;
+  }
+  .bubble.kid {
+    align-self: flex-end; background: #3b82f6; color: #fff;
+    border-bottom-right-radius: 4px;
+  }
+  .bubble.kid.voice { background: #10b981; }
+
+  /* ── Exercise Card ── */
+  .exercise-card {
+    align-self: stretch; background: #fff;
+    border: 1.5px solid #e2e8f0; border-radius: 16px;
+    padding: 20px; margin: 4px 0;
+  }
+  .exercise-card .problem {
+    font-size: 30px; font-weight: 700; text-align: center;
+    margin: 12px 0; color: #1e293b; letter-spacing: 3px;
+    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  }
+  .exercise-card .feedback {
+    text-align: center; font-size: 15px; color: #3b82f6;
+    margin-top: 8px; font-weight: 600;
+  }
+
+  /* ── Thinking / Loading ── */
+  .thinking {
+    align-self: flex-start; display: flex; align-items: center; gap: 10px;
+    padding: 8px 14px; background: #fff; border: 1px solid #e2e8f0;
+    border-radius: 16px; border-bottom-left-radius: 4px;
+  }
+  .mascot { font-size: 30px; animation: bounce 0.8s infinite alternate; }
+  @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-5px); } }
+  .dots { display: flex; gap: 4px; }
+  .dots span { width: 7px; height: 7px; border-radius: 50%; background: #94a3b8; animation: dot 1.2s infinite; }
+  .dots span:nth-child(2) { animation-delay: 0.2s; }
+  .dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes dot { 0%,60% { opacity: 0.3; } 100% { opacity: 1; } }
+
+  /* ── Gear ── */
+  .gear {
+    position: absolute; bottom: 16px; right: 16px;
+    width: 34px; height: 34px; border-radius: 50%;
+    background: #fff; border: 1px solid #e2e8f0;
+    font-size: 16px; cursor: pointer; opacity: 0.4;
+    display: flex; align-items: center; justify-content: center;
+    color: #64748b; transition: opacity 0.2s;
+  }
+  .gear:hover { opacity: 0.9; }
+
+  .mockup-label {
+    text-align: center; margin-top: 12px; font-size: 13px;
+    color: #64748b; letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+<div style="display:flex;flex-direction:column;align-items:center;">
+<div class="wrapper">
+
+  <div class="left-pane">
+    <div class="input-btn active" title="Voice">🎤</div>
+    <div class="input-btn" title="Camera">📷</div>
+    <div class="input-btn" title="Keyboard">⌨</div>
+    <div class="spacer"></div>
+  </div>
+
+  <div class="right-pane">
+    <div class="chat-area">
+      <div class="bubble ai">
+        こんにちは！きょうは なにを しようか？ 🐻
+      </div>
+      <div class="bubble kid voice">
+        さんすう やりたい！
+      </div>
+      <div class="bubble ai">
+        いいね！じゃあ たしざんの もんだいを だすね。
+      </div>
+
+      <div class="exercise-card">
+        <div style="font-size:12px;color:#94a3b8;font-weight:600;">PROBLEM</div>
+        <div class="problem">3 + 5 = ?</div>
+        <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;">
+          <span style="background:#f1f5f9;padding:10px 20px;border-radius:12px;font-size:20px;cursor:pointer;">4</span>
+          <span style="background:#f1f5f9;padding:10px 20px;border-radius:12px;font-size:20px;cursor:pointer;">7</span>
+          <span style="background:#f1f5f9;padding:10px 20px;border-radius:12px;font-size:20px;cursor:pointer;">8</span>
+          <span style="background:#f1f5f9;padding:10px 20px;border-radius:12px;font-size:20px;cursor:pointer;">9</span>
+        </div>
+        <div class="feedback">答えをタップしてね</div>
+      </div>
+
+      <div class="thinking">
+        <span class="mascot">🐻</span>
+        <div class="dots">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+
+      <div class="bubble ai">
+        <strong>ピンポン！せいかい！</strong> 🎉<br>
+        3 + 5 = 8 だね。
+      </div>
+      <div class="bubble ai">
+        つぎは 7 + 2 は いくつかな？
+      </div>
+    </div>
+
+    <button class="gear">⚙</button>
+  </div>
+</div>
+<div class="mockup-label">Mockup 2 — Clean Modern</div>
+</div>
+</body>
+</html>

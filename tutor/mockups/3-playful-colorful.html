@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup 3 — Playful Colorful</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+    background: #fef9f0;
+    display: flex; justify-content: center; align-items: center;
+    min-height: 100vh; padding: 20px;
+  }
+  .wrapper {
+    width: 900px; max-width: 100%; height: 640px;
+    display: flex; border-radius: 28px;
+    overflow: hidden;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.12);
+  }
+
+  /* ── Left Pane ── */
+  .left-pane {
+    width: 84px; min-width: 84px;
+    background: linear-gradient(180deg, #ff6b6b 0%, #ffa235 50%, #54c06b 100%);
+    display: flex; flex-direction: column; align-items: center;
+    padding: 20px 0 16px; gap: 16px;
+  }
+  .input-btn {
+    width: 58px; height: 58px; border-radius: 18px;
+    border: 3px solid #ffffff66; background: #ffffffdd;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px; cursor: pointer; transition: 0.15s;
+    backdrop-filter: blur(4px);
+  }
+  .input-btn.active {
+    background: #fff; border-color: #fff;
+    box-shadow: 0 4px 20px #00000022; transform: scale(1.05);
+  }
+  .input-btn:hover { background: #fff; }
+  .spacer { flex: 1; }
+
+  /* ── Right Pane ── */
+  .right-pane {
+    flex: 1; background: #fffdf7;
+    display: flex; flex-direction: column;
+    position: relative;
+  }
+  .chat-area {
+    flex: 1; overflow-y: auto;
+    padding: 22px 24px; display: flex; flex-direction: column; gap: 14px;
+  }
+
+  /* ── Bubbles ── */
+  .bubble {
+    max-width: 76%; padding: 14px 18px; border-radius: 22px;
+    font-size: 17px; line-height: 1.5; font-weight: 500;
+    animation: popIn 0.3s cubic-bezier(0.34,1.56,0.64,1);
+  }
+  @keyframes popIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+  .bubble.ai {
+    align-self: flex-start; background: #fff0db; color: #5c3d2e;
+    border-bottom-left-radius: 8px;
+    border: 2px solid #ffb74d;
+  }
+  .bubble.kid {
+    align-self: flex-end; background: #e8f5e9; color: #2e5c31;
+    border-bottom-right-radius: 8px;
+    border: 2px solid #66bb6a;
+  }
+  .bubble.kid.voice { background: #e3f2fd; border-color: #42a5f5; color: #1a3a5c; }
+
+  /* ── Exercise Card ── */
+  .exercise-card {
+    align-self: stretch; background: linear-gradient(135deg, #fff9c4, #fff3e0);
+    border: 3px solid #ffb74d; border-radius: 24px;
+    padding: 24px; margin: 4px 0;
+  }
+  .exercise-card .problem {
+    font-size: 34px; font-weight: 900; text-align: center;
+    margin: 14px 0; color: #e65100;
+    text-shadow: 2px 2px 0 #ffe0b2;
+    letter-spacing: 4px;
+  }
+  .exercise-card .feedback {
+    text-align: center; font-size: 16px; color: #f57c00;
+    margin-top: 10px; font-weight: 700;
+  }
+
+  /* ── Thinking / Loading ── */
+  .thinking {
+    align-self: flex-start; display: flex; align-items: center; gap: 10px;
+    padding: 10px 16px; background: #fff0db; border: 2px solid #ffb74d;
+    border-radius: 22px; border-bottom-left-radius: 8px;
+  }
+  .mascot { font-size: 34px; animation: wiggle 0.6s infinite alternate; }
+  @keyframes wiggle { from { transform: rotate(-5deg); } to { transform: rotate(5deg); } }
+  .dots { display: flex; gap: 5px; }
+  .dots span { width: 10px; height: 10px; border-radius: 50%; background: #ff9800; animation: dot 1s infinite; }
+  .dots span:nth-child(2) { animation-delay: 0.15s; background: #f44336; }
+  .dots span:nth-child(3) { animation-delay: 0.3s; background: #4caf50; }
+  @keyframes dot { 0%,60% { opacity: 0.25; transform: scale(0.8); } 100% { opacity: 1; transform: scale(1); } }
+
+  /* ── Gear ── */
+  .gear {
+    position: absolute; bottom: 16px; right: 16px;
+    width: 38px; height: 38px; border-radius: 50%;
+    background: #ffb74d; border: 2px solid #f57c00;
+    font-size: 18px; cursor: pointer; opacity: 0.45;
+    display: flex; align-items: center; justify-content: center;
+    color: #5c3d2e; transition: opacity 0.2s;
+  }
+  .gear:hover { opacity: 0.95; }
+
+  .mockup-label {
+    text-align: center; margin-top: 12px; font-size: 13px;
+    color: #f57c00; letter-spacing: 0.5px; font-weight: 600;
+  }
+</style>
+</head>
+<body>
+<div style="display:flex;flex-direction:column;align-items:center;">
+<div class="wrapper">
+
+  <div class="left-pane">
+    <div class="input-btn active" title="Voice">🎤</div>
+    <div class="input-btn" title="Camera">📷</div>
+    <div class="input-btn" title="Keyboard">✏</div>
+    <div class="spacer"></div>
+  </div>
+
+  <div class="right-pane">
+    <div class="chat-area">
+      <div class="bubble ai">
+        こんにちは！きょうは なにを しようか？ 🐻
+      </div>
+      <div class="bubble kid voice">
+        さんすう やりたい！
+      </div>
+      <div class="bubble ai">
+        いいね！じゃあ たしざんの もんだいを だすね。くりあがりの ない たしざん、できるかな？
+      </div>
+
+      <div class="exercise-card">
+        <div style="font-size:14px;color:#e65100;font-weight:700;">⭐ もんだい ⭐</div>
+        <div class="problem">3 + 5 = ？</div>
+        <div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap;">
+          <span style="background:#fff;border:2px solid #ffcc80;padding:10px 22px;border-radius:16px;font-size:22px;font-weight:700;cursor:pointer;color:#bf360c;">4</span>
+          <span style="background:#fff;border:2px solid #ffcc80;padding:10px 22px;border-radius:16px;font-size:22px;font-weight:700;cursor:pointer;color:#bf360c;">7</span>
+          <span style="background:#fff;border:2px solid #ffcc80;padding:10px 22px;border-radius:16px;font-size:22px;font-weight:700;cursor:pointer;color:#bf360c;">8</span>
+          <span style="background:#fff;border:2px solid #ffcc80;padding:10px 22px;border-radius:16px;font-size:22px;font-weight:700;cursor:pointer;color:#bf360c;">9</span>
+        </div>
+        <div class="feedback">👇 こたえを タップしてね！</div>
+      </div>
+
+      <div class="thinking">
+        <span class="mascot">🐻</span>
+        <div class="dots">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+
+      <div class="bubble ai">
+        <strong>ピンポン！せいかい！</strong> 🎉<br>
+        3 + 5 = 8 だね。すごい！
+      </div>
+      <div class="bubble ai">
+        つぎは ちょっと むずかしく するよ。<br>7 + 2 は いくつ？
+      </div>
+    </div>
+
+    <button class="gear">⚙</button>
+  </div>
+</div>
+<div class="mockup-label">Mockup 3 — Playful Colorful</div>
+</div>
+</body>
+</html>

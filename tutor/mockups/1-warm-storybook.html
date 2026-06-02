@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup 1 — Warm Storybook</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+    background: #f5f0e8;
+    display: flex; justify-content: center; align-items: center;
+    min-height: 100vh; padding: 20px;
+  }
+  .wrapper {
+    width: 900px; max-width: 100%; height: 640px;
+    display: flex; border-radius: 24px;
+    overflow: hidden;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.12);
+  }
+
+  /* ── Left Pane ── */
+  .left-pane {
+    width: 80px; min-width: 80px;
+    background: #d4c5b2;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 20px 0 16px; gap: 20px;
+  }
+  .input-btn {
+    width: 56px; height: 56px; border-radius: 16px;
+    border: 2px solid #b8a58b; background: #faf6f0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px; cursor: pointer; transition: 0.15s;
+    color: #6b5c4b;
+  }
+  .input-btn.active { background: #e8d9c3; border-color: #9b8465; box-shadow: 0 0 0 3px #c4b39366; }
+  .input-btn:hover { background: #efe4d2; }
+  .spacer { flex: 1; }
+
+  /* ── Right Pane ── */
+  .right-pane {
+    flex: 1; background: #fefaf4;
+    display: flex; flex-direction: column;
+    position: relative;
+  }
+  .chat-area {
+    flex: 1; overflow-y: auto;
+    padding: 20px 24px; display: flex; flex-direction: column; gap: 14px;
+  }
+
+  /* ── Bubbles ── */
+  .bubble {
+    max-width: 78%; padding: 14px 18px; border-radius: 20px;
+    font-size: 17px; line-height: 1.5;
+    animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .bubble.ai {
+    align-self: flex-start; background: #f5ede0; color: #4a3724;
+    border-bottom-left-radius: 6px;
+  }
+  .bubble.kid {
+    align-self: flex-end; background: #d4c5b2; color: #3d2e1c;
+    border-bottom-right-radius: 6px;
+  }
+  .bubble.kid.voice { background: #c8e6c9; }
+
+  /* ── Exercise Card ── */
+  .exercise-card {
+    align-self: stretch; background: #fffaf2;
+    border: 2px solid #d4c5b2; border-radius: 20px;
+    padding: 24px; margin: 4px 0;
+  }
+  .exercise-card .emoji { font-size: 32px; }
+  .exercise-card .problem {
+    font-size: 28px; font-weight: 700; text-align: center;
+    margin: 12px 0; color: #4a3724; letter-spacing: 2px;
+  }
+  .exercise-card .feedback {
+    text-align: center; font-size: 16px; color: #7cb342;
+    margin-top: 8px; font-weight: 600;
+  }
+
+  /* ── Thinking / Loading ── */
+  .thinking {
+    align-self: flex-start; display: flex; align-items: center; gap: 10px;
+    padding: 8px 14px;
+  }
+  .mascot { font-size: 36px; animation: bounce 0.8s infinite alternate; }
+  @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-6px); } }
+  .dots { display: flex; gap: 4px; }
+  .dots span { width: 8px; height: 8px; border-radius: 50%; background: #c4b393; animation: dot 1.2s infinite; }
+  .dots span:nth-child(2) { animation-delay: 0.2s; }
+  .dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes dot { 0%,60% { opacity: 0.3; } 100% { opacity: 1; } }
+
+  /* ── Gear ── */
+  .gear {
+    position: absolute; bottom: 16px; right: 16px;
+    width: 36px; height: 36px; border-radius: 50%;
+    background: #d4c5b2; border: none;
+    font-size: 18px; cursor: pointer; opacity: 0.5;
+    display: flex; align-items: center; justify-content: center;
+    color: #6b5c4b; transition: opacity 0.2s;
+  }
+  .gear:hover { opacity: 0.9; }
+
+  /* ── Label ── */
+  .mockup-label {
+    text-align: center; margin-top: 12px; font-size: 13px;
+    color: #9b8b7a; letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+<div style="display:flex;flex-direction:column;align-items:center;">
+<div class="wrapper">
+
+  <!-- Left Pane -->
+  <div class="left-pane">
+    <div class="input-btn active" title="Voice">🎤</div>
+    <div class="input-btn" title="Camera">📷</div>
+    <div class="input-btn" title="Keyboard">⌨</div>
+    <div class="spacer"></div>
+  </div>
+
+  <!-- Right Pane -->
+  <div class="right-pane">
+
+    <div class="chat-area">
+      <!-- Greeting -->
+      <div class="bubble ai">
+        こんにちは！きょうは なにを しようか？ 🐻
+      </div>
+
+      <!-- Kid response -->
+      <div class="bubble kid voice">
+        さんすう やりたい！
+      </div>
+
+      <!-- AI responds -->
+      <div class="bubble ai">
+        いいね！じゃあ たしざんの もんだいを だすね。くりあがりの ない たしざん、できるかな？
+      </div>
+
+      <!-- Exercise Card -->
+      <div class="exercise-card">
+        <div style="font-size:13px;color:#9b8b7a;margin-bottom:4px;">🃏 もんだい</div>
+        <div class="problem">3 + 5 = ？</div>
+        <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;">
+          <span style="background:#f5ede0;padding:8px 18px;border-radius:12px;font-size:20px;">4</span>
+          <span style="background:#f5ede0;padding:8px 18px;border-radius:12px;font-size:20px;">7</span>
+          <span style="background:#f5ede0;padding:8px 18px;border-radius:12px;font-size:20px;">8</span>
+          <span style="background:#f5ede0;padding:8px 18px;border-radius:12px;font-size:20px;">9</span>
+        </div>
+        <div class="feedback">▶ こたえを タップしてね</div>
+      </div>
+
+      <!-- Thinking / Mascot loading state -->
+      <div class="thinking">
+        <span class="mascot">🐻</span>
+        <div class="dots">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+
+      <!-- Correct answer feedback -->
+      <div class="bubble ai">
+        <strong>ピンポン！せいかい！</strong> 🎉<br>
+        3 + 5 = 8 だね。すごい！
+      </div>
+
+      <!-- Follow-up -->
+      <div class="bubble ai">
+        つぎは ちょっと むずかしく するよ。<br>7 + 2 は いくつ？
+      </div>
+    </div>
+
+    <!-- Gear -->
+    <button class="gear">⚙</button>
+  </div>
+</div>
+<div class="mockup-label">Mockup 1 — Warm Storybook</div>
+</div>
+</body>
+</html>
