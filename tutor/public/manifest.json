@@ -1,0 +1,22 @@
+{
+  "name": "くま先生 — AI Tutor",
+  "short_name": "くま先生",
+  "description": "AI-powered tutor for そうすけ — 国語 and 算数",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "landscape-primary",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

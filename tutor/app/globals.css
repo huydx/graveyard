@@ -1,0 +1,151 @@
+@import "tailwindcss";
+
+/* ── Night Cozy Theme (Mockup 5) ── */
+
+@theme inline {
+  /* Backgrounds */
+  --color-dark-bg: #1a1a2e;
+  --color-dark-card: #1e2a3a;
+  --color-sidebar: #16213e;
+
+  /* Text */
+  --color-text-primary: #d0d8e8;
+  --color-text-secondary: #c9d0e0;
+  --color-text-muted: #8e99b0;
+
+  /* Accent colors */
+  --color-accent-purple: #c9a0ff;
+  --color-accent-gold: #ffe8a0;
+  --color-purple: #c9a0ff;
+  --color-purple-light: #e0c8ff;
+  --color-purple-card: #3d2e5c;
+  --color-blue: #64b5f6;
+  --color-blue-light: #c8e6ff;
+  --color-blue-card: #2a3d4f;
+
+  /* Dots / loading */
+  --color-dot-pink: #ff9a9e;
+  --color-dot-warm: #ffd4a8;
+  --color-dot-purple: #c9a0ff;
+
+  /* Recording */
+  --color-recording: #3d2e5c;
+  --color-recording-border: #c9a0ff;
+
+  /* Shadows */
+  --shadow-glow-purple: 0 0 16px #c9a0ff33, 0 0 0 2px #c9a0ff22;
+  --shadow-glow-red: 0 0 16px #ff444433, 0 0 0 2px #ff444422;
+  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.2);
+
+  /* Fonts */
+  --font-sans: "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Geist", sans-serif;
+  --font-mono: "Geist Mono", monospace;
+}
+
+/* ── Animations ── */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes gentleFloat {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes glow {
+  0%,
+  60% {
+    opacity: 0.3;
+    box-shadow: none;
+  }
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 8px currentColor;
+  }
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-6px);
+  }
+  75% {
+    transform: translateX(6px);
+  }
+}
+
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.35s ease;
+  }
+
+  .animate-float {
+    animation: gentleFloat 1.5s infinite alternate ease-in-out;
+  }
+
+  .animate-glow {
+    animation: glow 1.2s infinite;
+  }
+
+  .animate-shake {
+    animation: shake 0.4s ease;
+  }
+
+  .text-glow {
+    text-shadow: 0 0 20px #ffa00044;
+  }
+}
+
+/* ── Global styles ── */
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-dark-bg);
+  color: var(--color-text-primary);
+  font-family: "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Geist", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar styling — subtle, dark theme */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ffffff15;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #ffffff25;
+}
+
+/* PWA full-screen */
+@media (display-mode: standalone) {
+  html,
+  body {
+    height: 100dvh;
+  }
+}
